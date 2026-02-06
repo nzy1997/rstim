@@ -1,8 +1,8 @@
 use rand::Rng;
-use yao_rs::{Gate, Circuit, State, apply, measure::measure_and_collapse, put, control};
 
 use crate::ir::{StimInstr, StimTarget};
 use crate::recorder::Recorder;
+use crate::sim::tableau::StabilizerState;
 
 pub struct Executor {
     instrs: Vec<StimInstr>,
@@ -21,50 +21,52 @@ impl Executor {
 
     pub fn run(&mut self, rng: &mut impl Rng) -> Result<ExecOutput, String> {
         let n = max_qubit(&self.instrs)?;
-        let mut state = State::zero_state(&vec![2; n]);
+        let mut state = StabilizerState::new(n);
         let mut recorder = Recorder::default();
         let mut detectors = Vec::new();
         let mut observables = Vec::new();
 
         for instr in &self.instrs {
             match instr.name.as_str() {
-                "H" | "X" | "Y" | "Z" | "S" => {
-                    let gate = match instr.name.as_str() {
-                        "H" => Gate::H,
-                        "X" => Gate::X,
-                        "Y" => Gate::Y,
-                        "Z" => Gate::Z,
-                        _ => Gate::S,
-                    };
-                    for t in &instr.targets {
-                        let q = expect_qubit(t)?;
-                        let c = Circuit::new(vec![2; n], vec![put(vec![q], gate.clone())])
-                            .map_err(|e| format!("circuit: {e:?}"))?;
-                        state = apply(&c, &state);
-                    }
-                }
+                "H" => for_each_qubit(&instr.targets, |q| state.h(q))?,
+                "S" => for_each_qubit(&instr.targets, |q| state.s(q))?,
+                "X" => for_each_qubit(&instr.targets, |q| state.x_gate(q))?,
+                "Y" => for_each_qubit(&instr.targets, |q| state.y_gate(q))?,
+                "Z" => for_each_qubit(&instr.targets, |q| state.z_gate(q))?,
                 "CX" | "CNOT" => {
                     let pairs = qubit_pairs(&instr.targets)?;
                     for (c, t) in pairs {
-                        let ckt = Circuit::new(vec![2; n], vec![control(vec![c], vec![t], Gate::X)])
-                            .map_err(|e| format!("circuit: {e:?}"))?;
-                        state = apply(&ckt, &state);
+                        state.cx(c, t);
                     }
                 }
                 "CZ" => {
                     let pairs = qubit_pairs(&instr.targets)?;
                     for (c, t) in pairs {
-                        let ckt = Circuit::new(vec![2; n], vec![control(vec![c], vec![t], Gate::Z)])
-                            .map_err(|e| format!("circuit: {e:?}"))?;
-                        state = apply(&ckt, &state);
+                        state.cz(c, t);
                     }
                 }
                 "M" => {
-                    for t in &instr.targets {
-                        let q = expect_qubit(t)?;
-                        let result = measure_and_collapse(&mut state, Some(&[q]), rng);
-                        let bit = result[0] == 1;
-                        recorder.push(bit);
+                    for q in qubits(&instr.targets)? {
+                        let (bit, _) = state.measure_z(q, rng);
+                        recorder.push(bit == 1);
+                    }
+                }
+                "MX" => {
+                    for q in qubits(&instr.targets)? {
+                        state.h(q);
+                        let (bit, _) = state.measure_z(q, rng);
+                        state.h(q);
+                        recorder.push(bit == 1);
+                    }
+                }
+                "MY" => {
+                    for q in qubits(&instr.targets)? {
+                        state.s_dag(q);
+                        state.h(q);
+                        let (bit, _) = state.measure_z(q, rng);
+                        state.h(q);
+                        state.s(q);
+                        recorder.push(bit == 1);
                     }
                 }
                 "DETECTOR" => {
@@ -107,6 +109,21 @@ fn max_qubit(instrs: &[StimInstr]) -> Result<usize, String> {
         }
     }
     Ok(max_q.map(|m| (m as usize) + 1).unwrap_or(0))
+}
+
+fn qubits(targets: &[StimTarget]) -> Result<Vec<usize>, String> {
+    let mut out = Vec::new();
+    for t in targets {
+        out.push(expect_qubit(t)?);
+    }
+    Ok(out)
+}
+
+fn for_each_qubit<F: FnMut(usize)>(targets: &[StimTarget], mut f: F) -> Result<(), String> {
+    for t in targets {
+        f(expect_qubit(t)?);
+    }
+    Ok(())
 }
 
 fn expect_qubit(t: &StimTarget) -> Result<usize, String> {

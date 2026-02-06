@@ -41,6 +41,13 @@ impl StabilizerState {
         }
     }
 
+    pub fn s_dag(&mut self, q: usize) {
+        // S^\u2020 is S applied three times
+        self.s(q);
+        self.s(q);
+        self.s(q);
+    }
+
     pub fn x_gate(&mut self, q: usize) {
         for i in 0..2 * self.n {
             if self.z[i][q] {
