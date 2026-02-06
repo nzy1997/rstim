@@ -27,58 +27,71 @@ impl Executor {
         let mut observables = Vec::new();
 
         for instr in &self.instrs {
-            match instr.name.as_str() {
-                "H" => for_each_qubit(&instr.targets, |q| state.h(q))?,
-                "S" => for_each_qubit(&instr.targets, |q| state.s(q))?,
-                "X" => for_each_qubit(&instr.targets, |q| state.x_gate(q))?,
-                "Y" => for_each_qubit(&instr.targets, |q| state.y_gate(q))?,
-                "Z" => for_each_qubit(&instr.targets, |q| state.z_gate(q))?,
-                "CX" | "CNOT" => {
-                    let pairs = qubit_pairs(&instr.targets)?;
-                    for (c, t) in pairs {
-                        state.cx(c, t);
+            match instr {
+                StimInstr::Op { name, args, targets, .. } => {
+                    match name.as_str() {
+                        "H" => for_each_qubit(targets, |q| state.h(q))?,
+                        "S" => for_each_qubit(targets, |q| state.s(q))?,
+                        "X" => for_each_qubit(targets, |q| state.x_gate(q))?,
+                        "Y" => for_each_qubit(targets, |q| state.y_gate(q))?,
+                        "Z" => for_each_qubit(targets, |q| state.z_gate(q))?,
+                        "CX" | "CNOT" => {
+                            let pairs = qubit_pairs(targets)?;
+                            for (c, t) in pairs {
+                                state.cx(c, t);
+                            }
+                        }
+                        "CZ" => {
+                            let pairs = qubit_pairs(targets)?;
+                            for (c, t) in pairs {
+                                state.cz(c, t);
+                            }
+                        }
+                        "M" => {
+                            for q in qubits(targets)? {
+                                let (bit, _) = state.measure_z(q, rng);
+                                recorder.push(bit == 1);
+                            }
+                        }
+                        "MX" => {
+                            for q in qubits(targets)? {
+                                state.h(q);
+                                let (bit, _) = state.measure_z(q, rng);
+                                state.h(q);
+                                recorder.push(bit == 1);
+                            }
+                        }
+                        "MY" => {
+                            for q in qubits(targets)? {
+                                state.s_dag(q);
+                                state.h(q);
+                                let (bit, _) = state.measure_z(q, rng);
+                                state.h(q);
+                                state.s(q);
+                                recorder.push(bit == 1);
+                            }
+                        }
+                        "DETECTOR" => {
+                            let bit = xor_recs(&recorder, targets)?;
+                            detectors.push(bit);
+                        }
+                        "OBSERVABLE_INCLUDE" => {
+                            let index = args.get(0).copied().unwrap_or(0.0) as u32;
+                            let bit = xor_recs(&recorder, targets)?;
+                            observables.push((index, bit));
+                        }
+                        _ => return Err(format!("unsupported instruction {}", name)),
                     }
                 }
-                "CZ" => {
-                    let pairs = qubit_pairs(&instr.targets)?;
-                    for (c, t) in pairs {
-                        state.cz(c, t);
+                StimInstr::Repeat { count, body } => {
+                    for _ in 0..*count {
+                        let mut inner = Executor::from_instrs(body.clone())?;
+                        let out = inner.run(rng)?;
+                        recorder.extend(out.measurements);
+                        detectors.extend(out.detectors);
+                        observables.extend(out.observables);
                     }
                 }
-                "M" => {
-                    for q in qubits(&instr.targets)? {
-                        let (bit, _) = state.measure_z(q, rng);
-                        recorder.push(bit == 1);
-                    }
-                }
-                "MX" => {
-                    for q in qubits(&instr.targets)? {
-                        state.h(q);
-                        let (bit, _) = state.measure_z(q, rng);
-                        state.h(q);
-                        recorder.push(bit == 1);
-                    }
-                }
-                "MY" => {
-                    for q in qubits(&instr.targets)? {
-                        state.s_dag(q);
-                        state.h(q);
-                        let (bit, _) = state.measure_z(q, rng);
-                        state.h(q);
-                        state.s(q);
-                        recorder.push(bit == 1);
-                    }
-                }
-                "DETECTOR" => {
-                    let bit = xor_recs(&recorder, &instr.targets)?;
-                    detectors.push(bit);
-                }
-                "OBSERVABLE_INCLUDE" => {
-                    let index = instr.args.get(0).copied().unwrap_or(0.0) as u32;
-                    let bit = xor_recs(&recorder, &instr.targets)?;
-                    observables.push((index, bit));
-                }
-                _ => return Err(format!("unsupported instruction {}", instr.name)),
             }
         }
 
@@ -102,9 +115,17 @@ fn recorder_bits(r: Recorder) -> Vec<bool> {
 fn max_qubit(instrs: &[StimInstr]) -> Result<usize, String> {
     let mut max_q: Option<u32> = None;
     for i in instrs {
-        for t in &i.targets {
-            if let StimTarget::Qubit(q) = t {
-                max_q = Some(max_q.map_or(*q, |m| m.max(*q)));
+        match i {
+            StimInstr::Op { targets, .. } => {
+                for t in targets {
+                    if let StimTarget::Qubit(q) = t {
+                        max_q = Some(max_q.map_or(*q, |m| m.max(*q)));
+                    }
+                }
+            }
+            StimInstr::Repeat { body, .. } => {
+                let inner = max_qubit(body)? as u32;
+                max_q = Some(max_q.map_or(inner, |m| m.max(inner)));
             }
         }
     }

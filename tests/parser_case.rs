@@ -1,10 +1,17 @@
 use rstim::parser::parse_lines;
+use rstim::ir::StimInstr;
 
 #[test]
 fn parses_case_insensitive_names() {
     let instrs = parse_lines("h 0\nDeTeCtOr rec[-1]\n").unwrap();
-    assert_eq!(instrs[0].name, "H");
-    assert_eq!(instrs[1].name, "DETECTOR");
+    match &instrs[0] {
+        StimInstr::Op { name, .. } => assert_eq!(name, "H"),
+        _ => panic!("expected Op"),
+    }
+    match &instrs[1] {
+        StimInstr::Op { name, .. } => assert_eq!(name, "DETECTOR"),
+        _ => panic!("expected Op"),
+    }
 }
 
 #[test]
