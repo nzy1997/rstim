@@ -71,6 +71,46 @@ impl Executor {
                                 recorder.push(bit == 1);
                             }
                         }
+                        "X_ERROR" => {
+                            let p = args.get(0).copied().unwrap_or(0.0);
+                            for q in qubits(targets)? {
+                                if rng.r#gen::<f64>() < p {
+                                    state.x_gate(q);
+                                }
+                            }
+                        }
+                        "Z_ERROR" => {
+                            let p = args.get(0).copied().unwrap_or(0.0);
+                            for q in qubits(targets)? {
+                                if rng.r#gen::<f64>() < p {
+                                    state.z_gate(q);
+                                }
+                            }
+                        }
+                        "DEPOLARIZE1" => {
+                            let p = args.get(0).copied().unwrap_or(0.0);
+                            for q in qubits(targets)? {
+                                if rng.r#gen::<f64>() < p {
+                                    match rng.gen_range(0..3) {
+                                        0 => state.x_gate(q),
+                                        1 => state.y_gate(q),
+                                        _ => state.z_gate(q),
+                                    }
+                                }
+                            }
+                        }
+                        "DEPOLARIZE2" => {
+                            let p = args.get(0).copied().unwrap_or(0.0);
+                            let pairs = qubit_pairs(targets)?;
+                            for (a, b) in pairs {
+                                if rng.r#gen::<f64>() < p {
+                                    let r = rng.gen_range(0..15);
+                                    let (pa, pb) = two_qubit_pauli(r);
+                                    apply_pauli(&mut state, a, pa);
+                                    apply_pauli(&mut state, b, pb);
+                                }
+                            }
+                        }
                         "DETECTOR" => {
                             let bit = xor_recs(&recorder, targets)?;
                             detectors.push(bit);
@@ -178,4 +218,31 @@ fn xor_recs(r: &Recorder, targets: &[StimTarget]) -> Result<bool, String> {
         }
     }
     Ok(acc)
+}
+
+fn apply_pauli(state: &mut StabilizerState, q: usize, p: u8) {
+    match p {
+        0 => {}
+        1 => state.x_gate(q),
+        2 => state.y_gate(q),
+        3 => state.z_gate(q),
+        _ => {}
+    }
+}
+
+fn two_qubit_pauli(r: usize) -> (u8, u8) {
+    // Map 0..14 to 15 non-identity pairs from {I,X,Y,Z}^2 \ {II}
+    let mut idx = 0usize;
+    for a in 0..4 {
+        for b in 0..4 {
+            if a == 0 && b == 0 {
+                continue;
+            }
+            if idx == r {
+                return (a as u8, b as u8);
+            }
+            idx += 1;
+        }
+    }
+    (0, 0)
 }
