@@ -8,10 +8,11 @@ pub fn parse_lines(input: &str) -> Result<Vec<StimInstr>, String> {
             continue;
         }
         let mut parts = line.split_whitespace();
-        let name = parts
+        let name_token = parts
             .next()
             .ok_or_else(|| format!("line {}: empty", line_no + 1))?;
-        let mut instr = StimInstr::new(name, vec![], vec![]);
+        let (name, args) = split_name_and_args(name_token)?;
+        let mut instr = StimInstr::new(name, args, vec![]);
         for token in parts {
             if let Some(t) = parse_target(token)? {
                 instr.targets.push(t);
@@ -34,4 +35,25 @@ fn parse_target(token: &str) -> Result<Option<StimTarget>, String> {
         return Ok(Some(StimTarget::Qubit(q)));
     }
     Err(format!("unsupported target {token}"))
+}
+
+fn split_name_and_args(token: &str) -> Result<(&str, Vec<f64>), String> {
+    if let Some(idx) = token.find('(') {
+        if !token.ends_with(')') {
+            return Err(format!("bad args {token}"));
+        }
+        let name = &token[..idx];
+        let args_str = token[idx + 1..token.len() - 1].trim();
+        let args = if args_str.is_empty() {
+            vec![]
+        } else {
+            args_str
+                .split(',')
+                .map(|s| s.trim().parse::<f64>().map_err(|_| format!("bad arg {s}")))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        Ok((name, args))
+    } else {
+        Ok((token, vec![]))
+    }
 }
