@@ -1,0 +1,8 @@
+[package]
+name = "rstim"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+yao-rs = { path = "../../../yao-rs" }
+rand = "0.8"

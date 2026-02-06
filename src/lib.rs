@@ -5,3 +5,4 @@ pub fn version() -> &'static str {
 pub mod ir;
 pub mod recorder;
 pub mod parser;
+pub mod executor;
