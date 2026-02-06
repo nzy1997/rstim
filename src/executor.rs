@@ -98,7 +98,7 @@ fn recorder_bits(r: Recorder) -> Vec<bool> {
 }
 
 fn max_qubit(instrs: &[StimInstr]) -> Result<usize, String> {
-    let mut max_q = None;
+    let mut max_q: Option<u32> = None;
     for i in instrs {
         for t in &i.targets {
             if let StimTarget::Qubit(q) = t {

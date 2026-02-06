@@ -1,3 +1,8 @@
 /Stim/
 /yao-rs/
 /.worktrees/
+
+
+# Added by cargo
+
+/target
