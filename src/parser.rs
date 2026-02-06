@@ -12,7 +12,7 @@ pub fn parse_lines(input: &str) -> Result<Vec<StimInstr>, String> {
             .next()
             .ok_or_else(|| format!("line {}: empty", line_no + 1))?;
         let (name, args) = split_name_and_args(name_token)?;
-        let mut instr = StimInstr::new(name, args, vec![]);
+        let mut instr = StimInstr::new(&name.to_ascii_uppercase(), args, vec![]);
         for token in parts {
             if let Some(t) = parse_target(token)? {
                 instr.targets.push(t);
@@ -29,6 +29,9 @@ fn parse_target(token: &str) -> Result<Option<StimTarget>, String> {
         let val: i32 = inner
             .parse()
             .map_err(|_| format!("bad rec target {token}"))?;
+        if val >= 0 {
+            return Err("rec must be negative".to_string());
+        }
         return Ok(Some(StimTarget::Rec(val)));
     }
     if let Ok(q) = token.parse::<u32>() {
