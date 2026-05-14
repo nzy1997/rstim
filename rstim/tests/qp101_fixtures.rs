@@ -1,8 +1,19 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use rstim::cli;
 use rstim::codegen::{repetition_code_memory, surface_code};
-use rstim::qp101::{export_qp101, Qp101Document};
+use rstim::executor::Executor;
+use rstim::ir::{circuit_to_string, StimInstr};
+use rstim::qp101::{export_qp101, export_qp101_with_sample_trace, Qp101Document};
+
+const MIXED_NOISE_BASE_FIXTURE: &str = "surface_code_rotated_memory_x_d3_r3_mixed_noise.json";
+const MIXED_NOISE_SAMPLE_FIXTURE: &str =
+    "surface_code_rotated_memory_x_d3_r3_mixed_noise_sample_seed7.json";
+const MIXED_NOISE_SAMPLE_SEED: u64 = 7;
+const MIXED_NOISE_ROUNDS: usize = 3;
+const MIXED_NOISE_DATA_QUBITS: usize = 9;
+const MAX_SPARSE_LOSS_TARGETS: usize = 6;
 
 fn fixture_path(file_name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -45,6 +56,18 @@ fn assert_common_markers(doc: &Qp101Document) {
     );
 }
 
+fn mixed_noise_showcase_instrs() -> Vec<StimInstr> {
+    rstim::showcase::mixed_noise_rotated_memory_x_d3_r3()
+}
+
+fn count_target_tokens_for_op(circuit_text: &str, op_prefix: &str) -> usize {
+    circuit_text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(op_prefix))
+        .map(|suffix| suffix.split_whitespace().count())
+        .sum()
+}
+
 #[test]
 fn repetition_code_fixture_has_expected_qp101_markers() {
     // Regenerate with: rstim gen ... && rstim export_json ... (Task 5 fixture flow).
@@ -61,6 +84,67 @@ fn surface_code_fixture_has_expected_qp101_markers() {
     let generated = export_qp101(&surface_code::rotated_memory_x(3, 3, 0.0))
         .expect("export of rotated surface code should succeed");
     let fixture = load_fixture("surface_code_rotated_memory_x_d3_r3.json");
+
+    assert_eq!(generated, fixture);
+    assert_common_markers(&generated);
+}
+
+#[test]
+fn mixed_noise_showcase_circuit_contains_sparse_loss_and_common_pauli_noise() {
+    let instrs = mixed_noise_showcase_instrs();
+    let circuit_text = circuit_to_string(&instrs);
+
+    for noise_op in [
+        "LOSS(0.01)",
+        "X_ERROR(0.01)",
+        "Z_ERROR(0.01)",
+        "DEPOLARIZE1(0.01)",
+        "DEPOLARIZE2(0.01)",
+    ] {
+        assert!(
+            circuit_text.contains(noise_op),
+            "mixed-noise showcase is missing required noise op {noise_op}:\n{circuit_text}"
+        );
+    }
+
+    let loss_target_count = count_target_tokens_for_op(&circuit_text, "LOSS(0.01)");
+    assert!(
+        loss_target_count > 0,
+        "mixed-noise showcase should contain at least one sparse loss target"
+    );
+    assert!(
+        loss_target_count <= MAX_SPARSE_LOSS_TARGETS,
+        "expected sparse loss placement (<= {MAX_SPARSE_LOSS_TARGETS} targets), got {loss_target_count}"
+    );
+    assert!(
+        loss_target_count < MIXED_NOISE_ROUNDS * MIXED_NOISE_DATA_QUBITS,
+        "loss placement regressed to the old dense pattern: {loss_target_count} targets"
+    );
+}
+
+#[test]
+fn mixed_noise_showcase_base_fixture_matches_exported_qp101() {
+    let instrs = mixed_noise_showcase_instrs();
+    let generated =
+        export_qp101(&instrs).expect("export of mixed-noise showcase should succeed");
+    let fixture = load_fixture(MIXED_NOISE_BASE_FIXTURE);
+
+    assert_eq!(generated, fixture);
+    assert_common_markers(&generated);
+}
+
+#[test]
+fn mixed_noise_showcase_sample_fixture_matches_seeded_trace_export() {
+    let instrs = mixed_noise_showcase_instrs();
+    let mut executor =
+        Executor::from_instrs(instrs.clone()).expect("mixed-noise showcase should execute");
+    let mut rng = cli::make_rng(Some(MIXED_NOISE_SAMPLE_SEED));
+    let (_out, trace) = executor
+        .run_with_trace(&mut rng)
+        .expect("mixed-noise showcase should produce a sample trace");
+    let generated = export_qp101_with_sample_trace(&instrs, &trace)
+        .expect("sample trace export of mixed-noise showcase should succeed");
+    let fixture = load_fixture(MIXED_NOISE_SAMPLE_FIXTURE);
 
     assert_eq!(generated, fixture);
     assert_common_markers(&generated);
