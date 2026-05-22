@@ -15,6 +15,7 @@
       <nav class="top-nav" aria-label="Primary">
         <a href="#schema-browser">Schema</a>
         <a href="#operations">Operations</a>
+        <a href="#gallery">Gallery</a>
         <a href="#examples">Examples</a>
       </nav>
       <div class="hero">
@@ -147,6 +148,81 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section id="gallery">
+        <div class="section-heading">
+          <p class="eyebrow">Rendered with qp101-viz</p>
+          <h2>Circuit Gallery</h2>
+        </div>
+        <div class="gallery-grid">
+          <article class="gallery-card">
+            <div class="gallery-copy">
+              <div class="example-heading">
+                <h3>Basic Circuit</h3>
+                <a href="examples/basic.qp101.json">JSON</a>
+              </div>
+              <p>
+                Minimal gate, control, tick, and measurement structure rendered
+                from the same QP101 example shipped with the site.
+              </p>
+              <div class="gallery-links">
+                <a href="examples/basic.qp101.json">Example JSON</a>
+                <a href="https://github.com/nzy1997/rstim/blob/master/qp101-viz/examples/basic-site.typ">Typst source</a>
+              </div>
+            </div>
+            <div class="gallery-preview">
+              <img
+                src="gallery/basic-site.svg"
+                alt="Rendered basic QP101 circuit with H, controlled X, tick, and measurement"
+              >
+            </div>
+          </article>
+          <article class="gallery-card">
+            <div class="gallery-copy">
+              <div class="example-heading">
+                <h3>Repeat Detector</h3>
+                <a href="examples/repeat-detector.qp101.json">JSON</a>
+              </div>
+              <p>
+                A compact QEC-style example showing repeat structure,
+                measurement anchors, and detector semantics.
+              </p>
+              <div class="gallery-links">
+                <a href="examples/repeat-detector.qp101.json">Example JSON</a>
+                <a href="https://github.com/nzy1997/rstim/blob/master/qp101-viz/examples/repeat-detector-site.typ">Typst source</a>
+              </div>
+            </div>
+            <div class="gallery-preview">
+              <img
+                src="gallery/repeat-detector-site.svg"
+                alt="Rendered repeated QP101 detector circuit with CX, measurement, and detector box"
+              >
+            </div>
+          </article>
+          <article class="gallery-card">
+            <div class="gallery-copy">
+              <div class="example-heading">
+                <h3>Atom Loss Sample</h3>
+                <a href="examples/atom-loss-sample.qp101.json">JSON</a>
+              </div>
+              <p>
+                Sample-trace annotations rendered inline, including atom loss,
+                measurement results, and detector flips.
+              </p>
+              <div class="gallery-links">
+                <a href="examples/atom-loss-sample.qp101.json">Example JSON</a>
+                <a href="https://github.com/nzy1997/rstim/blob/master/qp101-viz/examples/atom-loss-sample.typ">Typst source</a>
+              </div>
+            </div>
+            <div class="gallery-preview">
+              <img
+                src="gallery/atom-loss-sample.svg"
+                alt="Rendered atom loss sample circuit with inline noise and detector annotations"
+              >
+            </div>
+          </article>
         </div>
       </section>
 
