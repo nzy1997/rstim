@@ -691,6 +691,7 @@ pub fn run_analyze_errors_with_flags(
 ) -> Result<(), String> {
     let instrs = parse_lines(circuit_text)?;
     let options = crate::error_analyzer::AnalyzeOptions {
+        backend: crate::error_analyzer::AnalyzeBackend::Auto,
         approximate_disjoint_errors,
         allow_gauge_detectors,
     };

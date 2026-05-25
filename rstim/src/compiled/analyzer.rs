@@ -1,10 +1,39 @@
-use crate::compiled::CompiledCircuit;
+use crate::compiled::{choose_analyzer_path, CompiledBlock, CompiledCircuit, CompiledPathDecision};
 use crate::dem::DetectorErrorModel;
-use crate::error_analyzer::AnalyzeOptions;
+use crate::error_analyzer::{AnalyzeBackend, AnalyzeOptions, ErrorAnalyzer};
 
 pub fn analyze_compiled_circuit(
-    _compiled: &CompiledCircuit,
-    _options: AnalyzeOptions,
+    compiled: &CompiledCircuit,
+    options: AnalyzeOptions,
 ) -> Result<DetectorErrorModel, String> {
-    Err("compiled analyzer not implemented yet".to_string())
+    match choose_analyzer_path(compiled) {
+        CompiledPathDecision::FastPath => {}
+        CompiledPathDecision::Fallback(reason) => return Err(reason.to_string()),
+    }
+
+    let [CompiledBlock::Repeat(region)] = compiled.blocks.as_slice() else {
+        return Err(
+            "compiled analyzer currently supports only a single top-level repeat region"
+                .to_string(),
+        );
+    };
+
+    let mut body_dem = ErrorAnalyzer::circuit_to_dem_with_options(
+        &region.body_source,
+        AnalyzeOptions {
+            backend: AnalyzeBackend::Flattened,
+            ..options
+        },
+    )?;
+    if region.detector_span > 0 {
+        body_dem.add_shift_detectors(region.detector_span, Vec::new());
+    }
+
+    let mut dem = DetectorErrorModel::new();
+    dem.set_min_counts(
+        region.detector_span * (region.count as usize),
+        body_dem.num_observables(),
+    );
+    dem.add_repeat(region.count, body_dem);
+    Ok(dem)
 }

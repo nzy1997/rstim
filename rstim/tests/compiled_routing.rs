@@ -36,7 +36,20 @@ fn sampler_path_falls_back_for_feedback_circuit() {
 }
 
 #[test]
-fn analyzer_path_falls_back_until_the_loop_aware_backend_exists() {
+fn analyzer_path_uses_fast_path_for_reset_based_single_repeat_circuit() {
+    let compiled = compile_circuit(
+        &parse_lines("REPEAT 8 {\n  X_ERROR(0.001) 0\n  MR 0\n  DETECTOR rec[-1]\n}\n").unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        choose_analyzer_path(&compiled),
+        CompiledPathDecision::FastPath
+    );
+}
+
+#[test]
+fn analyzer_path_falls_back_for_non_reset_repeat_circuit() {
     let compiled = compile_circuit(
         &parse_lines("REPEAT 8 {\n  X_ERROR(0.001) 0\n  M 0\n  DETECTOR rec[-1]\n}\n").unwrap(),
     )
@@ -44,6 +57,8 @@ fn analyzer_path_falls_back_until_the_loop_aware_backend_exists() {
 
     assert_eq!(
         choose_analyzer_path(&compiled),
-        CompiledPathDecision::Fallback("compiled analyzer not implemented yet")
+        CompiledPathDecision::Fallback(
+            "compiled analyzer currently supports only reset-based single top-level repeat regions",
+        )
     );
 }
