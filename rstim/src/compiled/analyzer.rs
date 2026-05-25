@@ -5,6 +5,7 @@ use crate::error_analyzer::{AnalyzeBackend, AnalyzeOptions, ErrorAnalyzer};
 pub fn analyze_compiled_circuit(
     compiled: &CompiledCircuit,
     options: AnalyzeOptions,
+    decompose_channel_errors: bool,
 ) -> Result<DetectorErrorModel, String> {
     match choose_analyzer_path(compiled) {
         CompiledPathDecision::FastPath => {}
@@ -18,13 +19,15 @@ pub fn analyze_compiled_circuit(
         );
     };
 
-    let mut body_dem = ErrorAnalyzer::circuit_to_dem_with_options(
-        &region.body_source,
-        AnalyzeOptions {
-            backend: AnalyzeBackend::Flattened,
-            ..options
-        },
-    )?;
+    let flattened_options = AnalyzeOptions {
+        backend: AnalyzeBackend::Flattened,
+        ..options
+    };
+    let mut body_dem = if decompose_channel_errors {
+        ErrorAnalyzer::circuit_to_dem_with_options_decomposed(&region.body_source, flattened_options)
+    } else {
+        ErrorAnalyzer::circuit_to_dem_with_options(&region.body_source, flattened_options)
+    }?;
     if region.detector_span > 0 {
         body_dem.add_shift_detectors(region.detector_span, Vec::new());
     }

@@ -323,13 +323,21 @@ impl ErrorAnalyzer {
             }
             AnalyzeBackend::Compiled => {
                 let compiled = crate::compiled::compile_circuit(instrs)?;
-                crate::compiled::analyze_compiled_circuit(&compiled, options)
+                crate::compiled::analyze_compiled_circuit(
+                    &compiled,
+                    options,
+                    decompose_channel_errors,
+                )
             }
             AnalyzeBackend::Auto => {
                 let compiled = crate::compiled::compile_circuit(instrs)?;
                 match crate::compiled::choose_analyzer_path(&compiled) {
                     crate::compiled::CompiledPathDecision::FastPath => {
-                        crate::compiled::analyze_compiled_circuit(&compiled, options)
+                        crate::compiled::analyze_compiled_circuit(
+                            &compiled,
+                            options,
+                            decompose_channel_errors,
+                        )
                     }
                     crate::compiled::CompiledPathDecision::Fallback(_) => {
                         Self::circuit_to_dem_inner(instrs, options, decompose_channel_errors)
