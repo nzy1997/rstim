@@ -1,4 +1,5 @@
-use rstim::perf::{benchmark_cases, PerfRecord, PerfWorkload};
+use rstim::perf::{PerfRecord, PerfWorkload, benchmark_cases};
+use serde_json::Value;
 
 #[test]
 fn benchmark_cases_cover_sampling_detect_and_repeat_analysis() {
@@ -46,10 +47,13 @@ fn perf_record_json_line_contains_required_keys() {
     };
 
     let line = record.to_json_line();
+    let json: Value = serde_json::from_str(line.trim_end()).unwrap();
 
-    assert!(line.contains("\"case_label\":\"surface-detect-d13\""));
-    assert!(line.contains("\"tool_variant\":\"rstim-auto\""));
-    assert!(line.contains("\"workload\":\"detect\""));
-    assert!(line.contains("\"repeat_count\":13"));
     assert!(line.ends_with('\n'));
+    assert_eq!(json["case_label"], "surface-detect-d13");
+    assert_eq!(json["tool_variant"], "rstim-auto");
+    assert_eq!(json["workload"], "detect");
+    assert_eq!(json["repeat_count"], 13);
+    assert_eq!(json["shots"], 10_000);
+    assert_eq!(json["peak_memory_bytes"], Value::Null);
 }

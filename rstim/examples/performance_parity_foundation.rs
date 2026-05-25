@@ -5,21 +5,26 @@ use std::time::Instant;
 
 use rstim::parser::parse_lines;
 use rstim::perf::{
-    benchmark_cases, effective_repeat_count, PerfCircuitSource, PerfRecord, PerfWorkload,
+    PerfCircuitSource, PerfRecord, PerfWorkload, benchmark_cases, effective_repeat_count,
 };
 use rstim::stats::summarize;
 
 fn rstim_bin() -> PathBuf {
     let exe = std::env::current_exe().expect("current exe");
-    let debug_dir = exe
+    let profile_dir = exe
         .parent()
         .and_then(|parent| parent.parent())
         .expect("example binary should live under target/<profile>/examples");
-    let binary = debug_dir.join(format!("rstim{}", std::env::consts::EXE_SUFFIX));
+    let profile_name = profile_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("debug");
+    let binary = profile_dir.join(format!("rstim{}", std::env::consts::EXE_SUFFIX));
     assert!(
         binary.exists(),
-        "rstim binary not found at {}",
-        binary.display()
+        "rstim binary not found at {}. Build it first with `cargo build -p rstim --{} --bin rstim`.",
+        binary.display(),
+        profile_name
     );
     binary
 }
@@ -57,30 +62,6 @@ fn source_text(source: PerfCircuitSource) -> String {
             );
             String::from_utf8(output.stdout).expect("utf8 circuit")
         }
-    }
-}
-
-fn current_peak_memory_bytes() -> Option<u64> {
-    #[cfg(unix)]
-    {
-        let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
-        let rc = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
-        if rc != 0 {
-            return None;
-        }
-        let usage = unsafe { usage.assume_init() };
-        #[cfg(target_os = "macos")]
-        {
-            return Some(usage.ru_maxrss as u64);
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            return Some((usage.ru_maxrss as u64).saturating_mul(1024));
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        None
     }
 }
 
@@ -145,7 +126,7 @@ fn run_case(
         repeat_count: effective_repeat_count(&instrs),
         shots,
         wall_time_ns: elapsed.as_nanos(),
-        peak_memory_bytes: current_peak_memory_bytes(),
+        peak_memory_bytes: None,
     }
 }
 
