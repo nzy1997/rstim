@@ -62,3 +62,16 @@ fn compiled_backend_preserves_decomposed_entry_point_for_supported_repeat() {
         analyze_error_probabilities_decomposed(circuit, AnalyzeBackend::Compiled)
     );
 }
+
+#[test]
+fn circuit_to_dem_default_entry_point_uses_default_backend_routing() {
+    let instrs =
+        parse_lines("REPEAT 8 {\n    X_ERROR(0.125) 0\n    MR 0\n    DETECTOR rec[-1]\n}\n")
+            .unwrap();
+
+    let default_dem = ErrorAnalyzer::circuit_to_dem(&instrs).unwrap();
+    let auto_dem = ErrorAnalyzer::circuit_to_dem_with_options(&instrs, AnalyzeOptions::default())
+        .unwrap();
+
+    assert_eq!(default_dem.to_string(), auto_dem.to_string());
+}

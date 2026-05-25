@@ -140,3 +140,41 @@ fn auto_backend_keeps_loss_circuit_on_interpreted_path() {
         bit_table_rows(&interpreted.observable_flips)
     );
 }
+
+#[test]
+fn compiled_backend_matches_interpreted_for_observable_with_nonzero_reference_sample() {
+    let instrs = parse_lines("X 0\nM 0\nOBSERVABLE_INCLUDE(0) rec[-1]\n").unwrap();
+
+    let mut interpreted_rng = StdRng::seed_from_u64(19);
+    let mut compiled_rng = StdRng::seed_from_u64(19);
+
+    let interpreted = sample_batch_with_options(
+        &instrs,
+        16,
+        &mut interpreted_rng,
+        SampleOptions {
+            backend: SamplingBackend::Interpreted,
+            ..SampleOptions::default()
+        },
+    )
+    .unwrap();
+    let compiled = sample_batch_with_options(
+        &instrs,
+        16,
+        &mut compiled_rng,
+        SampleOptions {
+            backend: SamplingBackend::Compiled,
+            ..SampleOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        bit_table_rows(&compiled.measurements),
+        bit_table_rows(&interpreted.measurements)
+    );
+    assert_eq!(
+        bit_table_rows(&compiled.observable_flips),
+        bit_table_rows(&interpreted.observable_flips)
+    );
+}

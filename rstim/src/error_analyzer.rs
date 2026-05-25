@@ -149,7 +149,7 @@ pub struct ErrorAnalyzer {
 
 impl ErrorAnalyzer {
     pub fn circuit_to_dem(instrs: &[StimInstr]) -> Result<DetectorErrorModel, String> {
-        Self::circuit_to_dem_inner(instrs, AnalyzeOptions::default(), false)
+        Self::circuit_to_dem_with_options(instrs, AnalyzeOptions::default())
     }
 
     pub fn circuit_to_dem_with_options(
