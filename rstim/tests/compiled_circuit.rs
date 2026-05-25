@@ -1,4 +1,4 @@
-use rstim::compiled::{CompiledBlock, compile_circuit};
+use rstim::compiled::{compile_circuit, CompiledBlock};
 use rstim::parser::parse_lines;
 
 #[test]
@@ -48,4 +48,23 @@ fn compile_circuit_sets_feature_flags_from_source() {
     assert_eq!(compiled.num_measurements, 2);
     assert_eq!(compiled.num_detectors, 0);
     assert_eq!(compiled.num_observables, 0);
+}
+
+#[test]
+fn compile_circuit_distinguishes_non_nested_repeat_circuits() {
+    let compiled = compile_circuit(&parse_lines("REPEAT 4 {\n  M 0\n}\n").unwrap()).unwrap();
+
+    assert!(!compiled.flags.has_loss);
+    assert!(!compiled.flags.has_feedback);
+    assert!(!compiled.flags.has_nested_repeat);
+    assert_eq!(compiled.blocks.len(), 1);
+
+    match &compiled.blocks[0] {
+        CompiledBlock::Repeat(region) => {
+            assert_eq!(region.count, 4);
+            assert_eq!(region.measurement_span, 1);
+            assert_eq!(region.detector_span, 0);
+        }
+        other => panic!("expected repeat block, got {other:?}"),
+    }
 }
