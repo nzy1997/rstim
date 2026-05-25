@@ -605,6 +605,7 @@ pub fn run_sample(
         } else {
             crate::data_path::ReferenceSampleMode::SimulateNoiseless
         },
+        ..SampleOptions::default()
     };
     let result = sample_batch_with_options(&instrs, shots, &mut rng, options)?;
     match fmt {
