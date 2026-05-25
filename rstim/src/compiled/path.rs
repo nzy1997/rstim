@@ -1,5 +1,6 @@
 use crate::compiled::{CompiledBlock, CompiledCircuit, CompiledRepeatRegion};
-use crate::ir::StimInstr;
+use crate::ir::{StimInstr, StimTarget};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompiledPathDecision {
@@ -50,21 +51,45 @@ pub fn choose_analyzer_path(compiled: &CompiledCircuit) -> CompiledPathDecision 
 
 fn supports_reset_periodic_body(region: &CompiledRepeatRegion) -> bool {
     let mut has_reset_measurement = false;
+    let mut measurements_seen = 0usize;
+    let mut last_touch_was_reset_measurement = BTreeMap::<u32, bool>::new();
+
     for instr in &region.body_source {
-        let StimInstr::Op { name, .. } = instr else {
+        let StimInstr::Op { name, targets, .. } = instr else {
             return false;
         };
+
+        if targets.iter().any(|target| {
+            matches!(
+                target,
+                StimTarget::Rec(offset) if *offset >= 0 || ((-*offset) as usize) > measurements_seen
+            )
+        }) {
+            return false;
+        }
+
         match name.as_str() {
             "MR" | "MRX" | "MRY" | "MRZ" => {
                 has_reset_measurement = true;
+                measurements_seen += targets.iter().filter_map(StimTarget::qubit_index).count();
+                for qubit in targets.iter().filter_map(StimTarget::qubit_index) {
+                    last_touch_was_reset_measurement.insert(qubit, true);
+                }
             }
             "M" | "MX" | "MY" | "MZ" | "MXX" | "MYY" | "MZZ" | "MPP" | "SPP" | "SPP_DAG" => {
                 return false;
             }
-            _ => {}
+            _ => {
+                for qubit in targets.iter().filter_map(StimTarget::qubit_index) {
+                    last_touch_was_reset_measurement.insert(qubit, false);
+                }
+            }
         }
     }
+
     has_reset_measurement
+        && !last_touch_was_reset_measurement.is_empty()
+        && last_touch_was_reset_measurement.values().all(|was_reset| *was_reset)
 }
 
 #[cfg(test)]

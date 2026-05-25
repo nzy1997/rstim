@@ -62,3 +62,33 @@ fn analyzer_path_falls_back_for_non_reset_repeat_circuit() {
         )
     );
 }
+
+#[test]
+fn analyzer_path_falls_back_when_qubit_is_touched_after_reset_measurement() {
+    let compiled = compile_circuit(
+        &parse_lines("REPEAT 8 {\n  MR 0\n  H 0\n  DETECTOR rec[-1]\n}\n").unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        choose_analyzer_path(&compiled),
+        CompiledPathDecision::Fallback(
+            "compiled analyzer currently supports only reset-based single top-level repeat regions",
+        )
+    );
+}
+
+#[test]
+fn analyzer_path_falls_back_for_cross_iteration_record_lookback() {
+    let compiled = compile_circuit(
+        &parse_lines("REPEAT 8 {\n  MR 0\n  DETECTOR rec[-2]\n  MR 0\n}\n").unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        choose_analyzer_path(&compiled),
+        CompiledPathDecision::Fallback(
+            "compiled analyzer currently supports only reset-based single top-level repeat regions",
+        )
+    );
+}
