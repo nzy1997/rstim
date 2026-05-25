@@ -41,7 +41,12 @@ pub fn sample_batch_with_options(
         SamplingBackend::Interpreted => sample_batch_interpreted(instrs, n_shots, rng, options),
         SamplingBackend::Compiled => {
             let compiled = compile_circuit(instrs)?;
-            sample_compiled_batch(&compiled, n_shots, rng, options)
+            match choose_sampler_path(&compiled) {
+                CompiledPathDecision::FastPath => {
+                    sample_compiled_batch(&compiled, n_shots, rng, options)
+                }
+                CompiledPathDecision::Fallback(reason) => Err(reason.to_string()),
+            }
         }
         SamplingBackend::Auto => {
             let compiled = compile_circuit(instrs)?;

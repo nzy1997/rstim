@@ -17,7 +17,7 @@ fn bit_table_rows(table: &BitTable) -> Vec<Vec<bool>> {
 #[test]
 fn compiled_backend_matches_interpreted_for_repeat_circuit() {
     let instrs = parse_lines(
-        "REPEAT 32 {\n  X_ERROR(0.001) 0\n  M 0\n  DETECTOR rec[-1]\n}\n",
+        "REPEAT 32 {\n  X_ERROR(0.001) 0\n  M 0\n  DETECTOR rec[-1]\n  OBSERVABLE_INCLUDE(0) rec[-1]\n}\n",
     )
     .unwrap();
 
@@ -57,6 +57,46 @@ fn compiled_backend_matches_interpreted_for_repeat_circuit() {
         bit_table_rows(&compiled.observable_flips),
         bit_table_rows(&interpreted.observable_flips)
     );
+}
+
+#[test]
+fn compiled_backend_rejects_loss_circuits_with_routing_reason() {
+    let instrs = parse_lines("LOSS(1) 0\nMRL 0\nDETECTOR rec[-1]\n").unwrap();
+    let mut rng = StdRng::seed_from_u64(13);
+
+    let err = sample_batch_with_options(
+        &instrs,
+        16,
+        &mut rng,
+        SampleOptions {
+            backend: SamplingBackend::Compiled,
+            ..SampleOptions::default()
+        },
+    )
+    .err()
+    .expect("compiled backend should reject loss circuits");
+
+    assert_eq!(err, "loss instructions require the interpreted path");
+}
+
+#[test]
+fn compiled_backend_rejects_feedback_circuits_with_routing_reason() {
+    let instrs = parse_lines("M 0\nCX rec[-1] 0\n").unwrap();
+    let mut rng = StdRng::seed_from_u64(17);
+
+    let err = sample_batch_with_options(
+        &instrs,
+        16,
+        &mut rng,
+        SampleOptions {
+            backend: SamplingBackend::Compiled,
+            ..SampleOptions::default()
+        },
+    )
+    .err()
+    .expect("compiled backend should reject feedback circuits");
+
+    assert_eq!(err, "feedback instructions require the interpreted path");
 }
 
 #[test]
