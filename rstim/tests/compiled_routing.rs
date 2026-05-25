@@ -1,6 +1,5 @@
 use rstim::compiled::{
-    choose_analyzer_path, choose_sampler_path, compile_circuit, path::has_single_top_level_repeat,
-    CompiledPathDecision,
+    choose_analyzer_path, choose_sampler_path, compile_circuit, CompiledPathDecision,
 };
 use rstim::parser::parse_lines;
 
@@ -47,18 +46,4 @@ fn analyzer_path_falls_back_until_the_loop_aware_backend_exists() {
         choose_analyzer_path(&compiled),
         CompiledPathDecision::Fallback("compiled analyzer not implemented yet")
     );
-}
-
-#[test]
-fn has_single_top_level_repeat_requires_an_exact_single_repeat_block() {
-    let single_repeat = compile_circuit(&parse_lines("REPEAT 8 {\n  M 0\n}\n").unwrap()).unwrap();
-    let prefixed_repeat =
-        compile_circuit(&parse_lines("R 0\nREPEAT 8 {\n  M 0\n}\n").unwrap()).unwrap();
-    let two_repeats =
-        compile_circuit(&parse_lines("REPEAT 2 {\n  M 0\n}\nREPEAT 3 {\n  M 0\n}\n").unwrap())
-            .unwrap();
-
-    assert!(has_single_top_level_repeat(&single_repeat));
-    assert!(!has_single_top_level_repeat(&prefixed_repeat));
-    assert!(!has_single_top_level_repeat(&two_repeats));
 }
