@@ -1,4 +1,6 @@
-use crate::compiled::{CompiledBlock, CompiledCircuit};
+use crate::compiled::CompiledCircuit;
+#[cfg(test)]
+use crate::compiled::CompiledBlock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompiledPathDecision {
@@ -23,7 +25,7 @@ pub fn choose_analyzer_path(_compiled: &CompiledCircuit) -> CompiledPathDecision
     CompiledPathDecision::Fallback("compiled analyzer not implemented yet")
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn has_single_top_level_repeat(compiled: &CompiledCircuit) -> bool {
     matches!(compiled.blocks.as_slice(), [CompiledBlock::Repeat(_)])
 }
