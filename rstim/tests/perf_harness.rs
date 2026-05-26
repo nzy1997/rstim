@@ -1,8 +1,8 @@
 use rstim::compiled::{CompiledPathDecision, choose_analyzer_path, compile_circuit};
 use rstim::parser::parse_lines;
 use rstim::perf::{
-    PerfRecord, PerfVariant, PerfWorkload, benchmark_case_variants, benchmark_cases,
-    benchmark_variants,
+    PerfBenchmarkCase, PerfCircuitSource, PerfRecord, PerfVariant, PerfWorkload,
+    benchmark_case_variants, benchmark_cases, benchmark_variants, effective_repeat_count,
 };
 use serde_json::Value;
 
@@ -75,6 +75,25 @@ fn benchmark_variants_cover_stim_and_both_rstim_backends() {
 }
 
 #[test]
+fn perf_workload_and_variant_labels_are_stable() {
+    assert_eq!(PerfWorkload::Sample.as_str(), "sample");
+    assert_eq!(PerfWorkload::Detect.as_str(), "detect");
+    assert_eq!(PerfWorkload::AnalyzeErrors.as_str(), "analyze_errors");
+
+    assert_eq!(PerfVariant::StimCli.label(), "stim-cli");
+    assert_eq!(PerfVariant::RstimInterpreted.label(), "rstim-interpreted");
+    assert_eq!(PerfVariant::RstimCompiled.label(), "rstim-compiled");
+    assert_eq!(
+        PerfVariant::RstimAnalyzerFlattened.label(),
+        "rstim-analyzer-flattened"
+    );
+    assert_eq!(
+        PerfVariant::RstimAnalyzerCompiled.label(),
+        "rstim-analyzer-compiled"
+    );
+}
+
+#[test]
 fn benchmark_cases_include_a_compiled_analyzer_compatible_repeat_case() {
     let cases = benchmark_cases();
 
@@ -96,6 +115,46 @@ fn benchmark_cases_include_a_compiled_analyzer_compatible_repeat_case() {
 }
 
 #[test]
+fn benchmark_case_variants_add_compiled_backends_for_supported_paths() {
+    let sample_instrs = parse_lines("X_ERROR(0.001) 0\nM 0\n").unwrap();
+    let sample_case = PerfBenchmarkCase {
+        label: "inline-sample",
+        workload: PerfWorkload::Sample,
+        source: PerfCircuitSource::Inline {
+            text: "X_ERROR(0.001) 0\nM 0\n",
+        },
+        shots: Some(32),
+    };
+    let analyze_instrs =
+        parse_lines("REPEAT 8 {\n  X_ERROR(0.001) 0\n  MR 0\n  DETECTOR rec[-1]\n}\n").unwrap();
+    let analyze_case = PerfBenchmarkCase {
+        label: "inline-analyze",
+        workload: PerfWorkload::AnalyzeErrors,
+        source: PerfCircuitSource::Inline {
+            text: "REPEAT 8 {\n  X_ERROR(0.001) 0\n  MR 0\n  DETECTOR rec[-1]\n}\n",
+        },
+        shots: None,
+    };
+
+    assert_eq!(
+        benchmark_case_variants(sample_case, &sample_instrs).unwrap(),
+        vec![
+            PerfVariant::StimCli,
+            PerfVariant::RstimInterpreted,
+            PerfVariant::RstimCompiled,
+        ]
+    );
+    assert_eq!(
+        benchmark_case_variants(analyze_case, &analyze_instrs).unwrap(),
+        vec![
+            PerfVariant::StimCli,
+            PerfVariant::RstimAnalyzerFlattened,
+            PerfVariant::RstimAnalyzerCompiled,
+        ]
+    );
+}
+
+#[test]
 fn loss_protection_case_skips_compiled_sampler_variant() {
     let case = benchmark_cases()
         .into_iter()
@@ -112,4 +171,14 @@ fn loss_protection_case_skips_compiled_sampler_variant() {
     assert!(variants.contains(&PerfVariant::StimCli));
     assert!(variants.contains(&PerfVariant::RstimInterpreted));
     assert!(!variants.contains(&PerfVariant::RstimCompiled));
+}
+
+#[test]
+fn effective_repeat_count_scales_nested_repeat_regions() {
+    let instrs = parse_lines(
+        "H 0\nREPEAT 2 {\n  REPEAT 3 {\n    M 0\n  }\n  REPEAT 5 {\n    M 1\n  }\n}\nREPEAT 7 {\n  M 2\n}\n",
+    )
+    .unwrap();
+
+    assert_eq!(effective_repeat_count(&instrs), 25);
 }

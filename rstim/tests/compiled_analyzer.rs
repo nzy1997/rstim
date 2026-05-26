@@ -1,4 +1,5 @@
 use rstim::error_analyzer::{AnalyzeBackend, AnalyzeOptions, ErrorAnalyzer};
+use rstim::compiled::{analyze_compiled_circuit, compile_circuit};
 use rstim::parser::parse_lines;
 use rstim::showcase::dem_semantic_summary;
 
@@ -74,4 +75,41 @@ fn circuit_to_dem_default_entry_point_uses_default_backend_routing() {
         .unwrap();
 
     assert_eq!(default_dem.to_string(), auto_dem.to_string());
+}
+
+#[test]
+fn analyze_compiled_circuit_returns_feedback_fallback_error() {
+    let compiled = compile_circuit(&parse_lines("M 0\nCX rec[-1] 0\n").unwrap()).unwrap();
+
+    let err = analyze_compiled_circuit(
+        &compiled,
+        AnalyzeOptions {
+            backend: AnalyzeBackend::Compiled,
+            ..AnalyzeOptions::default()
+        },
+        false,
+    )
+    .unwrap_err();
+
+    assert_eq!(err, "feedback instructions require the flattened analyzer");
+}
+
+#[test]
+fn analyze_compiled_circuit_rejects_non_repeat_top_level_structure() {
+    let compiled = compile_circuit(&parse_lines("MR 0\nDETECTOR rec[-1]\n").unwrap()).unwrap();
+
+    let err = analyze_compiled_circuit(
+        &compiled,
+        AnalyzeOptions {
+            backend: AnalyzeBackend::Compiled,
+            ..AnalyzeOptions::default()
+        },
+        false,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        err,
+        "compiled analyzer currently supports only a single top-level repeat region"
+    );
 }

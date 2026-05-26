@@ -49,6 +49,16 @@ fn analyzer_path_uses_fast_path_for_reset_based_single_repeat_circuit() {
 }
 
 #[test]
+fn analyzer_path_falls_back_for_loss_circuit() {
+    let compiled = compile_circuit(&parse_lines("LOSS(1) 0\nMRL 0\n").unwrap()).unwrap();
+
+    assert_eq!(
+        choose_analyzer_path(&compiled),
+        CompiledPathDecision::Fallback("loss instructions require the flattened analyzer")
+    );
+}
+
+#[test]
 fn analyzer_path_falls_back_for_non_reset_repeat_circuit() {
     let compiled = compile_circuit(
         &parse_lines("REPEAT 8 {\n  X_ERROR(0.001) 0\n  M 0\n  DETECTOR rec[-1]\n}\n").unwrap(),
@@ -60,6 +70,30 @@ fn analyzer_path_falls_back_for_non_reset_repeat_circuit() {
         CompiledPathDecision::Fallback(
             "compiled analyzer currently supports only reset-based single top-level repeat regions",
         )
+    );
+}
+
+#[test]
+fn analyzer_path_falls_back_for_feedback_circuit() {
+    let compiled = compile_circuit(&parse_lines("M 0\nCX rec[-1] 0\n").unwrap()).unwrap();
+
+    assert_eq!(
+        choose_analyzer_path(&compiled),
+        CompiledPathDecision::Fallback("feedback instructions require the flattened analyzer")
+    );
+}
+
+#[test]
+fn analyzer_path_falls_back_for_nested_repeat_circuit() {
+    let compiled = compile_circuit(
+        &parse_lines("REPEAT 8 {\n  REPEAT 2 {\n    MR 0\n    DETECTOR rec[-1]\n  }\n}\n")
+            .unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        choose_analyzer_path(&compiled),
+        CompiledPathDecision::Fallback("nested repeat blocks require the flattened analyzer")
     );
 }
 

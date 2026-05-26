@@ -95,9 +95,15 @@ fn supports_reset_periodic_body(region: &CompiledRepeatRegion) -> bool {
 #[cfg(test)]
 mod tests {
     use super::supports_reset_periodic_body;
-    use crate::compiled::compile_circuit;
-    use crate::compiled::CompiledBlock;
+    use crate::compiled::{compile_circuit, CompiledBlock, CompiledRepeatRegion};
     use crate::parser::parse_lines;
+
+    fn top_level_repeat_region<'a>(blocks: &'a [CompiledBlock]) -> &'a CompiledRepeatRegion {
+        match blocks {
+            [CompiledBlock::Repeat(region)] => region,
+            _ => panic!("expected top-level repeat"),
+        }
+    }
 
     #[test]
     fn supports_reset_periodic_body_requires_reset_measurements() {
@@ -108,14 +114,21 @@ mod tests {
             compile_circuit(&parse_lines("REPEAT 8 {\n  X_ERROR(0.1) 0\n  M 0\n}\n").unwrap())
                 .unwrap();
 
-        let [CompiledBlock::Repeat(reset_region)] = reset_repeat.blocks.as_slice() else {
-            panic!("expected top-level repeat");
-        };
-        let [CompiledBlock::Repeat(plain_region)] = plain_measure_repeat.blocks.as_slice() else {
-            panic!("expected top-level repeat");
-        };
+        let reset_region = top_level_repeat_region(reset_repeat.blocks.as_slice());
+        let plain_region = top_level_repeat_region(plain_measure_repeat.blocks.as_slice());
 
         assert!(supports_reset_periodic_body(reset_region));
         assert!(!supports_reset_periodic_body(plain_region));
+    }
+
+    #[test]
+    fn supports_reset_periodic_body_rejects_nested_repeat_in_body_source() {
+        let nested_repeat =
+            compile_circuit(&parse_lines("REPEAT 8 {\n  REPEAT 2 {\n    MR 0\n  }\n}\n").unwrap())
+                .unwrap();
+
+        let nested_region = top_level_repeat_region(nested_repeat.blocks.as_slice());
+
+        assert!(!supports_reset_periodic_body(nested_region));
     }
 }
