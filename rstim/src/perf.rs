@@ -1,5 +1,8 @@
 use serde::Serialize;
 
+use crate::compiled::{
+    CompiledPathDecision, choose_analyzer_path, choose_sampler_path, compile_circuit,
+};
 use crate::ir::StimInstr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +20,61 @@ impl PerfWorkload {
             PerfWorkload::AnalyzeErrors => "analyze_errors",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PerfVariant {
+    StimCli,
+    RstimInterpreted,
+    RstimCompiled,
+    RstimAnalyzerFlattened,
+    RstimAnalyzerCompiled,
+}
+
+impl PerfVariant {
+    pub fn label(&self) -> &'static str {
+        match self {
+            PerfVariant::StimCli => "stim-cli",
+            PerfVariant::RstimInterpreted => "rstim-interpreted",
+            PerfVariant::RstimCompiled => "rstim-compiled",
+            PerfVariant::RstimAnalyzerFlattened => "rstim-analyzer-flattened",
+            PerfVariant::RstimAnalyzerCompiled => "rstim-analyzer-compiled",
+        }
+    }
+}
+
+pub fn benchmark_variants() -> Vec<PerfVariant> {
+    vec![
+        PerfVariant::StimCli,
+        PerfVariant::RstimInterpreted,
+        PerfVariant::RstimCompiled,
+        PerfVariant::RstimAnalyzerFlattened,
+        PerfVariant::RstimAnalyzerCompiled,
+    ]
+}
+
+pub fn benchmark_case_variants(
+    case: PerfBenchmarkCase,
+    instrs: &[StimInstr],
+) -> Result<Vec<PerfVariant>, String> {
+    let compiled = compile_circuit(instrs)?;
+    let variants = match case.workload {
+        PerfWorkload::Sample | PerfWorkload::Detect => {
+            let mut variants = vec![PerfVariant::StimCli, PerfVariant::RstimInterpreted];
+            if choose_sampler_path(&compiled) == CompiledPathDecision::FastPath {
+                variants.push(PerfVariant::RstimCompiled);
+            }
+            variants
+        }
+        PerfWorkload::AnalyzeErrors => {
+            let mut variants = vec![PerfVariant::StimCli, PerfVariant::RstimAnalyzerFlattened];
+            if choose_analyzer_path(&compiled) == CompiledPathDecision::FastPath {
+                variants.push(PerfVariant::RstimAnalyzerCompiled);
+            }
+            variants
+        }
+    };
+    Ok(variants)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -111,7 +169,7 @@ pub fn benchmark_cases() -> Vec<PerfBenchmarkCase> {
             label: "repeat-analyze-large",
             workload: PerfWorkload::AnalyzeErrors,
             source: PerfCircuitSource::Inline {
-                text: "REPEAT 4096 {\n    X_ERROR(0.001) 0\n    M 0\n    DETECTOR rec[-1]\n}\n",
+                text: "REPEAT 4096 {\n    X_ERROR(0.001) 0\n    MR 0\n    DETECTOR rec[-1]\n}\n",
             },
             shots: None,
         },

@@ -2,25 +2,31 @@
 
 This document tracks the rerun workflow for the performance parity foundation.
 
-## Baseline Harness
+## Full Harness
 
-Build the matching `rstim` binary, then run the baseline harness:
-
-```sh
-cargo build -p rstim --release --bin rstim
-cargo run -p rstim --release --example performance_parity_foundation
-```
-
-Use debug builds only to smoke-test wiring. Use `--release` for any timing or
-comparison evidence, and build the matching debug binary first if you do a
-smoke run:
+Run the comparison harness with:
 
 ```sh
-cargo build -p rstim --bin rstim
 cargo run -p rstim --example performance_parity_foundation
 ```
 
-Each output line is JSON and includes:
+Set `RSTIM_TEST_STIM` if the Stim binary is not on `PATH`:
+
+```sh
+RSTIM_TEST_STIM=/absolute/path/to/stim cargo run -p rstim --example performance_parity_foundation
+```
+
+The harness emits one JSON line per `(case, tool_variant)` pair.
+
+Current variants:
+
+- `stim-cli`
+- `rstim-interpreted`
+- `rstim-compiled`
+- `rstim-analyzer-flattened`
+- `rstim-analyzer-compiled`
+
+Each JSON line includes:
 
 - `case_label`
 - `tool_variant`
@@ -35,14 +41,21 @@ Each output line is JSON and includes:
 - `wall_time_ns`
 - `peak_memory_bytes`
 
-In this Task 1 scaffold, `peak_memory_bytes` is reserved for future per-case
-child-process measurement and currently emits `null`.
+On Unix platforms, `peak_memory_bytes` is collected with
+`getrusage(RUSAGE_SELF)`.
 
-## Milestone Acceptance
+## Acceptance Workflow
 
-The first complete performance milestone is only accepted when:
+Run these commands before calling the milestone complete:
 
-1. semantic regressions stay green
-2. benchmark cases still cover sample, detect, and analyze_errors
-3. the benchmark comparison comes from `--release` runs and clearly shows the
-   intended improvement
+```sh
+cargo test -p rstim --test perf_harness --test compiled_circuit --test compiled_routing --test compiled_sampler --test compiled_analyzer
+cargo run -p rstim --example performance_parity_foundation > /tmp/rstim-performance-parity.jsonl
+```
+
+Review the JSON lines and confirm:
+
+1. sample and detect show a visible win for `rstim-compiled` over `rstim-interpreted`
+2. the repeat-focused analyze case uses `rstim-analyzer-compiled`
+3. protection cases still complete successfully
+4. semantic regression suites remain green
