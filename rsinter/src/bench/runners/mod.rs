@@ -138,6 +138,8 @@ pub(crate) fn run_decoder_point(
 #[cfg(test)]
 mod tests {
     use rstim::dem::DetectorErrorModel;
+    use std::thread;
+    use std::time::Duration;
 
     use super::*;
     use crate::decode::{CompiledDecoder, Decoder};
@@ -164,6 +166,34 @@ mod tests {
         }
     }
 
+    struct SlowPredictionDecoder {
+        sleep: Duration,
+    }
+
+    struct SlowPredictionCompiled {
+        sleep: Duration,
+    }
+
+    impl Decoder for SlowPredictionDecoder {
+        fn compile_for_dem(&self, _dem: &DetectorErrorModel) -> Box<dyn CompiledDecoder> {
+            Box::new(SlowPredictionCompiled { sleep: self.sleep })
+        }
+    }
+
+    impl CompiledDecoder for SlowPredictionCompiled {
+        fn decode_shots_bit_packed(
+            &self,
+            _dets: &[u8],
+            num_shots: usize,
+            _num_dets: usize,
+            num_obs: usize,
+        ) -> Vec<u8> {
+            thread::sleep(self.sleep);
+            let obs_bytes = num_obs.div_ceil(8);
+            vec![0u8; num_shots * obs_bytes]
+        }
+    }
+
     #[test]
     fn run_decoder_point_rejects_prediction_buffers_with_wrong_length() {
         let point = BenchCasePoint {
@@ -179,6 +209,7 @@ mod tests {
             observables_path: None,
             max_shots: 4,
             max_errors: 2,
+            max_wall_seconds: None,
             batch_size: 2,
             decoder_params: BTreeMap::new(),
         };
@@ -218,6 +249,7 @@ mod tests {
             observables_path: None,
             max_shots: 0,
             max_errors: 2,
+            max_wall_seconds: None,
             batch_size: 2,
             decoder_params: BTreeMap::new(),
         };
@@ -242,5 +274,44 @@ mod tests {
         assert_eq!(row.metrics["shots_used"], 0.0);
         assert_eq!(row.metrics["logical_error_rate"], 0.0);
         assert_eq!(row.metrics["decode_us_per_shot"], 0.0);
+    }
+
+    #[test]
+    fn run_decoder_point_respects_wall_clock_budget() {
+        let point = BenchCasePoint {
+            input_type: "surface_rotated_memory_x".into(),
+            code_id: None,
+            distance: Some(3),
+            rounds: 3,
+            p: 0.0,
+            basis: None,
+            schedule: None,
+            hx_path: None,
+            hz_path: None,
+            observables_path: None,
+            max_shots: 20,
+            max_errors: 20,
+            max_wall_seconds: Some(0.09),
+            batch_size: 1,
+            decoder_params: BTreeMap::new(),
+        };
+        let ctx = BenchRunContext {
+            benchmark_name: "surface_decoder".into(),
+            runner_name: "fake".into(),
+            language: "rust".into(),
+            seed: 12_345,
+            spec_dir: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        };
+
+        let decoder = SlowPredictionDecoder {
+            sleep: Duration::from_millis(35),
+        };
+        let decoder_params = crate::bench::result::ParamMap::new();
+        let row = run_decoder_point("fake", &decoder, &point, &ctx, &decoder_params).unwrap();
+
+        assert!(row.metrics["shots_used"] > 0.0);
+        assert!(row.metrics["shots_used"] < 20.0);
+        assert!(row.metrics["wall_seconds"] >= 0.09);
+        assert!(row.metrics["wall_seconds"] < 0.5);
     }
 }
