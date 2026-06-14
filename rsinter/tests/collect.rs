@@ -1,4 +1,4 @@
-use rsinter::collect::{collect, CollectOptions};
+use rsinter::collect::{CollectOptions, collect};
 use rsinter::decode::{CompiledDecoder, Decoder, VacuousDecoder};
 use rsinter::task::{CollectionOptions, Task};
 use rstim::dem::DetectorErrorModel;
@@ -37,10 +37,9 @@ impl CompiledDecoder for SlowCompiledDecoder {
 }
 
 fn make_task() -> Task {
-    let circuit = parse_lines(
-        "X_ERROR(0.1) 0\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]",
-    )
-    .unwrap();
+    let circuit =
+        parse_lines("X_ERROR(0.1) 0\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]")
+            .unwrap();
     let dem = ErrorAnalyzer::circuit_to_dem(&circuit).unwrap();
     Task {
         circuit,
