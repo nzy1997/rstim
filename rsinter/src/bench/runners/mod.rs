@@ -17,6 +17,13 @@ pub mod rbposd;
 pub mod rilpqec;
 pub mod rmatching;
 
+fn under_wall_budget(total_seconds: f64, max_wall_seconds: Option<f64>) -> bool {
+    match max_wall_seconds {
+        Some(max_seconds) => total_seconds < max_seconds,
+        None => true,
+    }
+}
+
 pub(crate) fn run_decoder_point(
     runner_name: &'static str,
     decoder: &dyn Decoder,
@@ -45,8 +52,13 @@ pub(crate) fn run_decoder_point(
     let mut logical_errors = 0usize;
     let mut generated_shots = 0usize;
     let mut total_decode_us = 0.0;
+    let mut wall_seconds = 0.0;
 
-    while shots_used < max_shots && logical_errors < max_errors {
+    while shots_used < max_shots
+        && logical_errors < max_errors
+        && under_wall_budget(wall_seconds, point.max_wall_seconds)
+    {
+        let batch_started = Instant::now();
         let batch_shots = point.batch_size.min(max_shots - shots_used);
         let batch = sample_batch(&circuit, batch_shots, &mut rng)?;
         generated_shots += batch_shots;
@@ -85,6 +97,7 @@ pub(crate) fn run_decoder_point(
                 break;
             }
         }
+        wall_seconds += batch_started.elapsed().as_secs_f64();
     }
 
     let mut result_params = built.params;
@@ -121,6 +134,7 @@ pub(crate) fn run_decoder_point(
             ),
             ("compile_us", compile_us),
             ("total_decode_us", total_decode_us),
+            ("wall_seconds", wall_seconds),
             (
                 "decode_us_per_shot",
                 if shots_used == 0 {
