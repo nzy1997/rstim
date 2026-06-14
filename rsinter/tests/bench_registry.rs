@@ -95,11 +95,17 @@ fn expand_runner_points_rejects_non_string_optional_fields() {
 fn expand_runner_points_rejects_non_positive_max_wall_seconds() {
     let mut params = valid_runner_params();
     params.insert("max_wall_seconds".into(), toml::Value::Float(0.0));
-    assert_eq!(expand_points_err(&params), "max_wall_seconds must be positive");
+    assert_eq!(
+        expand_points_err(&params),
+        "max_wall_seconds must be positive"
+    );
 
     let mut params = valid_runner_params();
     params.insert("max_wall_seconds".into(), toml::Value::Float(-1.0));
-    assert_eq!(expand_points_err(&params), "max_wall_seconds must be positive");
+    assert_eq!(
+        expand_points_err(&params),
+        "max_wall_seconds must be positive"
+    );
 }
 
 #[test]
@@ -211,7 +217,10 @@ fn expand_runner_points_still_requires_max_shots_with_wall_clock_budget() {
     params.remove("max_shots");
     params.insert("max_wall_seconds".into(), toml::Value::Float(2.5));
 
-    assert_eq!(expand_points_err(&params), "missing runner param: max_shots");
+    assert_eq!(
+        expand_points_err(&params),
+        "missing runner param: max_shots"
+    );
 }
 
 #[test]
