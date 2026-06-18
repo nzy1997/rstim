@@ -111,6 +111,11 @@ def iter_lsd_fixture_cases(lsd_fixtures_dir: Path) -> list[dict[str, Any]]:
         seen_ids.add(fixture_id)
         if not fixture_path_name:
             raise ValueError(f"LSD manifest entry {fixture_id} path must not be empty")
+        for metadata_field in ("provenance", "verifier", "pass_condition"):
+            if not str(entry.get(metadata_field, "")).strip():
+                raise ValueError(
+                    f"LSD manifest entry {fixture_id} {metadata_field} must not be empty"
+                )
         if "#90" not in entry.get("consumes", []):
             raise ValueError(f"LSD manifest entry {fixture_id} must consume #90")
 

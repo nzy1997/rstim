@@ -126,13 +126,19 @@ entry and that malformed metadata is rejected instead of silently skipped.
 The Python parity harness can opt into these LSD fixtures with:
 
 ```bash
-python3 -m pytest rbposd/scripts/test_parity_harness.py -k lsd
+python3 rbposd/scripts/parity_harness.py --include-lsd --skip-generated
 ```
 
 The harness path converts manifest-listed LSD fixtures into the existing parity
 report shape and compares supported `BpLsdDecoder` cases against upstream
 `ldpc`. Unsupported LSD mappings are reported as structured errors and are not
 coerced into OSD decoding.
+
+Harness unit coverage for the LSD manifest path can be run with:
+
+```bash
+python3 -m pytest rbposd/scripts/test_parity_harness.py -k lsd
+```
 
 Existing OSD/BP parity fixtures remain outside the #90 manifest. The broader
 shared LSD and BP-option fixture catalog remains owned by #98.

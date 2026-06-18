@@ -204,6 +204,52 @@ class ParityHarnessTests(unittest.TestCase):
         self.assertEqual(cases[0]["lsd_config"]["lsd_order"], 1)
         self.assertEqual(cases[0]["tags"], ["fixture", "lsd", "#90"])
 
+    def test_iter_lsd_fixture_cases_rejects_empty_manifest_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            fixture_dir = Path(tmp_dir)
+            (fixture_dir / "manifest.json").write_text(
+                """
+{
+  "fixtures": [
+    {
+      "id": "lsd_small_sparse_code",
+      "path": "lsd_small_sparse_code.json",
+      "provenance": "unit test provenance",
+      "verifier": "",
+      "pass_condition": "unit test pass condition",
+      "consumes": ["#90"]
+    }
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+            (fixture_dir / "lsd_small_sparse_code.json").write_text(
+                """
+{
+  "id": "lsd_small_sparse_code",
+  "matrix": {
+    "num_checks": 2,
+    "num_bits": 3,
+    "rows": [[1, 2], [0]]
+  },
+  "channel": {
+    "kind": "bsc",
+    "error_rate": 0.05
+  },
+  "syndrome": [true, false],
+  "lsd_order": 1,
+  "expected": {
+    "status": "success"
+  }
+}
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "verifier must not be empty"):
+                iter_lsd_fixture_cases(fixture_dir)
+
     def test_map_lsd_case_to_ldpc_kwargs_maps_supported_lsd(self) -> None:
         case = {
             "decoder": "bp_lsd",

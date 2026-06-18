@@ -102,6 +102,7 @@ fn task_6_documentation_surfaces_exist() {
         "#90/#98",
         "LSD Fixture Manifest",
         "manifest.json",
+        "python3 rbposd/scripts/parity_harness.py --include-lsd",
         "python3 -m pytest rbposd/scripts/test_parity_harness.py -k lsd",
         "Existing OSD/BP parity fixtures remain outside the #90 manifest",
     ] {
