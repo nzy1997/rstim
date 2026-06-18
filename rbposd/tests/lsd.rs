@@ -230,13 +230,26 @@ fn bplsd_order_one_recovers_the_borrowed_small_matrix_cases() {
             .decode(&syndrome)
             .unwrap_or_else(|error| panic!("failed to decode {}: {error}", fixture.id));
 
-        assert!(!result.used_osd, "fixture {} unexpectedly used OSD", fixture.id);
+        assert!(
+            !result.used_osd,
+            "fixture {} unexpectedly used OSD",
+            fixture.id
+        );
         assert_eq!(result.residual_syndrome_weight, 0, "fixture {}", fixture.id);
-        assert_eq!(pcm.multiply(&result.correction), syndrome, "fixture {}", fixture.id);
+        assert_eq!(
+            pcm.multiply(&result.correction),
+            syndrome,
+            "fixture {}",
+            fixture.id
+        );
 
         if let Some(expected_order_1) = fixture.expected.order_1_correction.clone() {
             let expected_order_1 = Correction::from(expected_order_1);
-            assert_eq!(result.correction, expected_order_1, "fixture {}", fixture.id);
+            assert_eq!(
+                result.correction, expected_order_1,
+                "fixture {}",
+                fixture.id
+            );
         }
 
         if let Some(expected_order_0) = fixture.expected.order_0_correction.clone() {
@@ -249,13 +262,20 @@ fn bplsd_order_one_recovers_the_borrowed_small_matrix_cases() {
                 },
             )
             .unwrap_or_else(|error| {
-                panic!("failed to construct order-0 decoder for {}: {error}", fixture.id)
+                panic!(
+                    "failed to construct order-0 decoder for {}: {error}",
+                    fixture.id
+                )
             });
             let order_0_result = order_0_decoder.decode(&syndrome).unwrap_or_else(|error| {
                 panic!("failed order-0 decode for {}: {error}", fixture.id)
             });
             let expected_order_0 = Correction::from(expected_order_0);
-            assert_eq!(order_0_result.correction, expected_order_0, "fixture {}", fixture.id);
+            assert_eq!(
+                order_0_result.correction, expected_order_0,
+                "fixture {}",
+                fixture.id
+            );
             assert_ne!(
                 result.correction, order_0_result.correction,
                 "fixture {} did not exercise a distinct order-1 correction",
