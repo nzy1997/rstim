@@ -6,7 +6,7 @@ use toml::Value;
 use crate::bench::registry::{BenchCasePoint, BenchRunContext, RustBenchRunner};
 use crate::bench::result::{BenchmarkResultRow, PairMapExt, ParamMap};
 use crate::bench::runners::params::{optional_bool, optional_string, optional_usize};
-use crate::bench::runners::{run_decoder_point_with_dem_mode, DemBuildMode};
+use crate::bench::runners::{DemBuildMode, run_decoder_point_with_dem_mode};
 use crate::decode::RbposdDemDecoder;
 
 pub struct RbposdRunner;
