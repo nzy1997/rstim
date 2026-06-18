@@ -41,7 +41,7 @@ impl BpLsdDecoder {
         match config.method {
             LsdMethod::LocalizedStatistics => {}
         }
-        if config.lsd_order != 0 {
+        if config.lsd_order > 1 {
             return Err(DecodeError::UnsupportedLsdOrder {
                 order: config.lsd_order,
             });
@@ -98,8 +98,10 @@ impl BpLsdDecoder {
         }
 
         let correction = {
-            let target_syndrome =
-                xor_syndromes(&multiply_bits(&self.pcm, &bp_workspace.hard_decision_bits), syndrome);
+            let target_syndrome = xor_syndromes(
+                &multiply_bits(&self.pcm, &bp_workspace.hard_decision_bits),
+                syndrome,
+            );
             let residual = {
                 let mut lsd_workspace = self.lsd_workspace.lock().unwrap();
                 decode_lsd_with_workspace(

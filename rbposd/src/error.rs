@@ -56,7 +56,7 @@ impl core::fmt::Display for DecodeError {
             Self::UnsupportedLsdOrder { order } => {
                 write!(
                     f,
-                    "unsupported LSD order {order}; only order 0 is supported"
+                    "unsupported LSD order {order}; only orders 0 and 1 are supported"
                 )
             }
         }
