@@ -17,6 +17,7 @@ struct RbposdRunnerParams {
     normalized: ParamMap,
 }
 
+#[allow(dead_code)]
 enum RbposdDecoderFamily {
     Osd {
         osd_method: String,
