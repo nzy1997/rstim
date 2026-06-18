@@ -309,10 +309,10 @@ fn correction_cost(bits: &[bool], reliability: &[f64]) -> f64 {
 fn is_better_candidate(candidate: &[bool], best: &[bool], reliability: &[f64]) -> bool {
     let candidate_cost = correction_cost(candidate, reliability);
     let best_cost = correction_cost(best, reliability);
-    if candidate_cost < best_cost - f64::EPSILON {
+    if candidate_cost < best_cost {
         return true;
     }
-    if (candidate_cost - best_cost).abs() <= f64::EPSILON {
+    if candidate_cost == best_cost {
         return candidate < best;
     }
     false
@@ -406,6 +406,16 @@ mod tests {
         let candidate = vec![false, false, true];
         let best = vec![false, true, false];
         let reliability = vec![1.0, 0.1, 0.5];
+
+        assert!(!is_better_candidate(&candidate, &best, &reliability));
+    }
+
+    #[test]
+    fn candidate_cost_break_does_not_treat_near_equal_costs_as_ties() {
+        let candidate = vec![false, false, true];
+        let best = vec![false, true, false];
+        let slightly_higher_cost = f64::from_bits(0.5f64.to_bits() + 1);
+        let reliability = vec![0.0, 0.5, slightly_higher_cost];
 
         assert!(!is_better_candidate(&candidate, &best, &reliability));
     }

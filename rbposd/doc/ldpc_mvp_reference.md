@@ -72,8 +72,8 @@ share that contract.
 
 ## LSD Public API Contract
 
-Issue #89 adds `BpLsdDecoder` as a first-class public decoder family parallel
-to `BpOsdDecoder`.
+Issue #89 extends the first-class `BpLsdDecoder` path parallel to
+`BpOsdDecoder`.
 
 The supported construction path is:
 
