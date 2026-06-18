@@ -127,21 +127,6 @@ fn lsd_manifest_path() -> PathBuf {
     lsd_fixture_dir().join("manifest.json")
 }
 
-fn expected_error_code(error: &DecodeError) -> &'static str {
-    match error {
-        DecodeError::NoLsdSolution => "NoLsdSolution",
-        DecodeError::UnsupportedLsdOrder { .. } => "UnsupportedLsdOrder",
-        DecodeError::DimensionMismatch { .. } => "DimensionMismatch",
-        DecodeError::InvalidProbability => "InvalidProbability",
-        DecodeError::EmptyMatrix => "EmptyMatrix",
-        DecodeError::InvalidColumnIndex { .. } => "InvalidColumnIndex",
-        DecodeError::InvalidRowIndex { .. } => "InvalidRowIndex",
-        DecodeError::SingularSystem => "SingularSystem",
-        DecodeError::BpDidNotConverge => "BpDidNotConverge",
-        DecodeError::NoOsdSolution => "NoOsdSolution",
-    }
-}
-
 fn assert_manifest_error(manifest: &LsdFixtureManifest, needle: &str) {
     let error = validate_lsd_fixture_manifest(manifest, &lsd_fixture_dir()).unwrap_err();
     assert!(
@@ -522,12 +507,8 @@ fn bplsd_fixture_manifest_cases_decode_cleanly() {
             }
             "error" => {
                 let error = decoder.decode(&syndrome).unwrap_err();
-                assert_eq!(
-                    fixture.expected.error.as_deref(),
-                    Some(expected_error_code(&error)),
-                    "fixture {}",
-                    fixture.id
-                );
+                assert_eq!(error, DecodeError::NoLsdSolution, "fixture {}", fixture.id);
+                assert_eq!(fixture.expected.error.as_deref(), Some("NoLsdSolution"));
             }
             other => panic!("unsupported expected status {other:?} in {}", fixture.id),
         }
@@ -537,6 +518,17 @@ fn bplsd_fixture_manifest_cases_decode_cleanly() {
 #[test]
 fn bplsd_fixture_manifest_rejects_invalid_case_metadata() {
     let valid = LsdFixtureManifest::load(&lsd_manifest_path());
+
+    let empty = LsdFixtureManifest { fixtures: vec![] };
+    assert_manifest_error(&empty, "must not be empty");
+
+    let mut missing_id = valid.clone();
+    missing_id.fixtures[0].id.clear();
+    assert_manifest_error(&missing_id, "id");
+
+    let mut missing_path = valid.clone();
+    missing_path.fixtures[0].path.clear();
+    assert_manifest_error(&missing_path, "path");
 
     let mut missing_provenance = valid.clone();
     missing_provenance.fixtures[0].provenance.clear();
@@ -554,9 +546,21 @@ fn bplsd_fixture_manifest_rejects_invalid_case_metadata() {
     missing_issue.fixtures[0].consumes.retain(|value| value != "#90");
     assert_manifest_error(&missing_issue, "#90");
 
+    let mut duplicate_id = valid.clone();
+    duplicate_id.fixtures[1].id = duplicate_id.fixtures[0].id.clone();
+    assert_manifest_error(&duplicate_id, "duplicate manifest id");
+
+    let mut duplicate_path = valid.clone();
+    duplicate_path.fixtures[1].path = duplicate_path.fixtures[0].path.clone();
+    assert_manifest_error(&duplicate_path, "duplicate manifest path");
+
     let mut stale_path = valid.clone();
     stale_path.fixtures[0].path = "missing_lsd_fixture.json".to_string();
     assert_manifest_error(&stale_path, "missing_lsd_fixture.json");
+
+    let mut mismatched_fixture_id = valid.clone();
+    mismatched_fixture_id.fixtures[0].id = "mismatched_fixture_id".to_string();
+    assert_manifest_error(&mismatched_fixture_id, "does not match fixture id");
 
     let mut missing_entry = valid.clone();
     missing_entry.fixtures.pop();
