@@ -136,14 +136,21 @@ impl RustBenchRunner for RbposdRunner {
         ctx: &BenchRunContext,
     ) -> Result<BenchmarkResultRow, String> {
         let params = RbposdRunnerParams::parse(&point.decoder_params)?;
-        let decoder = RbposdDemDecoder::new(params.bp_config);
-        run_decoder_point_with_dem_mode(
-            self.name(),
-            &decoder,
-            point,
-            ctx,
-            &params.normalized,
-            DemBuildMode::Raw,
-        )
+        match &params.decoder {
+            RbposdDecoderFamily::Osd { .. } => {
+                let decoder = RbposdDemDecoder::new(params.bp_config);
+                run_decoder_point_with_dem_mode(
+                    self.name(),
+                    &decoder,
+                    point,
+                    ctx,
+                    &params.normalized,
+                    DemBuildMode::Raw,
+                )
+            }
+            RbposdDecoderFamily::Lsd { .. } => {
+                Err("rbposd LSD DEM decoding is not implemented yet; see issue #92".into())
+            }
+        }
     }
 }
