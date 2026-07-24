@@ -1,12 +1,12 @@
 # Feature Test Report: rstim RSMP v1
 
-**Date:** 2026-07-24  
-**Project type:** Rust CLI and library  
-**Features tested:** `pack_samples`, `unpack_samples`, `--verify_only`, corruption handling, readiness and compression evidence  
-**Use Case:** Ephemeral — archive circuit measurements, recover decoder inputs, and evaluate production readiness  
-**Profile:** Ephemeral — CLI-comfortable QEC researcher without RSMP implementation knowledge  
-**Expected Outcome:** Losslessly archive measurements, recover measurements/detectors/observables with the original circuit, reject invalid inputs safely, and pass the documented readiness gate  
-**Verdict:** fail  
+**Date:** 2026-07-24
+**Project type:** Rust CLI and library
+**Features tested:** `pack_samples`, `unpack_samples`, `--verify_only`, corruption handling, readiness and compression evidence
+**Use Case:** Ephemeral — archive circuit measurements, recover decoder inputs, and evaluate production readiness
+**Profile:** Ephemeral — CLI-comfortable QEC researcher without RSMP implementation knowledge
+**Expected Outcome:** Losslessly archive measurements, recover measurements/detectors/observables with the original circuit, reject invalid inputs safely, and pass the documented readiness gate
+**Verdict:** fail
 **Critical Issues:** 1
 
 ## Summary
