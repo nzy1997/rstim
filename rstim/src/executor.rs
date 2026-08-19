@@ -896,16 +896,28 @@ fn execute_op(
             }
         }
         "ML" | "MZL" => {
+            let readout_error_p = loss_readout_error_probability(name, args)?;
             for (target_slot, q, inv) in qubits_with_inversion_slots(targets)? {
                 rng.prepare_intrinsic(context, &[target_slot], 0);
                 let base_index = exec.recorder.len();
-                let outcome = record_loss_visible_measure_z(
+                let mut outcome = record_loss_visible_measure_z(
                     &mut exec.state,
                     &exec.lost,
                     q,
                     inv,
                     rng,
                     &mut exec.recorder,
+                );
+                apply_loss_readout_error(
+                    &mut outcome,
+                    readout_error_p,
+                    context,
+                    name,
+                    target_slot,
+                    q,
+                    base_index,
+                    exec,
+                    rng,
                 );
                 exec.record_measurement_event(
                     context,
@@ -931,16 +943,28 @@ fn execute_op(
             }
         }
         "MXL" => {
+            let readout_error_p = loss_readout_error_probability(name, args)?;
             for (target_slot, q, inv) in qubits_with_inversion_slots(targets)? {
                 rng.prepare_intrinsic(context, &[target_slot], 0);
                 let base_index = exec.recorder.len();
-                let outcome = record_loss_visible_measure_x(
+                let mut outcome = record_loss_visible_measure_x(
                     &mut exec.state,
                     &exec.lost,
                     q,
                     inv,
                     rng,
                     &mut exec.recorder,
+                );
+                apply_loss_readout_error(
+                    &mut outcome,
+                    readout_error_p,
+                    context,
+                    name,
+                    target_slot,
+                    q,
+                    base_index,
+                    exec,
+                    rng,
                 );
                 exec.record_measurement_event(
                     context,
@@ -966,16 +990,28 @@ fn execute_op(
             }
         }
         "MYL" => {
+            let readout_error_p = loss_readout_error_probability(name, args)?;
             for (target_slot, q, inv) in qubits_with_inversion_slots(targets)? {
                 rng.prepare_intrinsic(context, &[target_slot], 0);
                 let base_index = exec.recorder.len();
-                let outcome = record_loss_visible_measure_y(
+                let mut outcome = record_loss_visible_measure_y(
                     &mut exec.state,
                     &exec.lost,
                     q,
                     inv,
                     rng,
                     &mut exec.recorder,
+                );
+                apply_loss_readout_error(
+                    &mut outcome,
+                    readout_error_p,
+                    context,
+                    name,
+                    target_slot,
+                    q,
+                    base_index,
+                    exec,
+                    rng,
                 );
                 exec.record_measurement_event(
                     context,
@@ -1001,16 +1037,28 @@ fn execute_op(
             }
         }
         "MRL" | "MRZL" => {
+            let readout_error_p = loss_readout_error_probability(name, args)?;
             for (target_slot, q, inv) in qubits_with_inversion_slots(targets)? {
                 rng.prepare_intrinsic(context, &[target_slot], 0);
                 let base_index = exec.recorder.len();
-                let outcome = measure_reset_loss_visible_z(
+                let mut outcome = measure_reset_loss_visible_z(
                     &mut exec.state,
                     &mut exec.lost,
                     q,
                     inv,
                     rng,
                     &mut exec.recorder,
+                );
+                apply_loss_readout_error(
+                    &mut outcome,
+                    readout_error_p,
+                    context,
+                    name,
+                    target_slot,
+                    q,
+                    base_index,
+                    exec,
+                    rng,
                 );
                 exec.record_measurement_event(
                     context,
@@ -1036,16 +1084,28 @@ fn execute_op(
             }
         }
         "MRXL" => {
+            let readout_error_p = loss_readout_error_probability(name, args)?;
             for (target_slot, q, inv) in qubits_with_inversion_slots(targets)? {
                 rng.prepare_intrinsic(context, &[target_slot], 0);
                 let base_index = exec.recorder.len();
-                let outcome = measure_reset_loss_visible_x(
+                let mut outcome = measure_reset_loss_visible_x(
                     &mut exec.state,
                     &mut exec.lost,
                     q,
                     inv,
                     rng,
                     &mut exec.recorder,
+                );
+                apply_loss_readout_error(
+                    &mut outcome,
+                    readout_error_p,
+                    context,
+                    name,
+                    target_slot,
+                    q,
+                    base_index,
+                    exec,
+                    rng,
                 );
                 exec.record_measurement_event(
                     context,
@@ -1071,16 +1131,28 @@ fn execute_op(
             }
         }
         "MRYL" => {
+            let readout_error_p = loss_readout_error_probability(name, args)?;
             for (target_slot, q, inv) in qubits_with_inversion_slots(targets)? {
                 rng.prepare_intrinsic(context, &[target_slot], 0);
                 let base_index = exec.recorder.len();
-                let outcome = measure_reset_loss_visible_y(
+                let mut outcome = measure_reset_loss_visible_y(
                     &mut exec.state,
                     &mut exec.lost,
                     q,
                     inv,
                     rng,
                     &mut exec.recorder,
+                );
+                apply_loss_readout_error(
+                    &mut outcome,
+                    readout_error_p,
+                    context,
+                    name,
+                    target_slot,
+                    q,
+                    base_index,
+                    exec,
+                    rng,
                 );
                 exec.record_measurement_event(
                     context,
@@ -2813,6 +2885,69 @@ fn measure_reset_y(
         bit,
         loss_cause: false,
     }
+}
+
+fn loss_readout_error_probability(name: &str, args: &[f64]) -> Result<f64, String> {
+    let probability = match args {
+        [] => 0.0,
+        [probability] => *probability,
+        _ => {
+            return Err(format!(
+                "{name} expects zero or one SSR readout error probability"
+            ));
+        }
+    };
+    if !probability.is_finite() || !(0.0..=1.0).contains(&probability) {
+        return Err(format!(
+            "{name} SSR readout error probability must be finite and in [0, 1], got {probability}"
+        ));
+    }
+    Ok(probability)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_loss_readout_error(
+    outcome: &mut LossVisibleMeasurementOutcome,
+    probability: f64,
+    context: &ExecutionTraversalContext,
+    instr_name: &str,
+    target_slot: usize,
+    target_qubit: usize,
+    loss_flag_index: usize,
+    exec: &mut ExecutionState,
+    rng: &mut ExecutionRandom<'_>,
+) {
+    let flipped = probability > 0.0
+        && rng.bernoulli(
+            context,
+            &[target_slot],
+            ChoiceKind::MeasurementFlip,
+            0,
+            probability,
+            true,
+        );
+    if !flipped {
+        return;
+    }
+
+    outcome.loss_flag = !outcome.loss_flag;
+    outcome.value.bit = rng.bernoulli(
+        context,
+        &[target_slot],
+        ChoiceKind::IntrinsicMeasurement,
+        1,
+        0.5,
+        false,
+    );
+    exec.recorder.set(loss_flag_index, outcome.loss_flag);
+    exec.recorder.set(loss_flag_index + 1, outcome.value.bit);
+    exec.record_noise_event(
+        context,
+        instr_name,
+        vec![target_slot],
+        vec![target_qubit as u32],
+        "flip",
+    );
 }
 
 fn record_loss_visible_measure_z(

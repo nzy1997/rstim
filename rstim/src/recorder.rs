@@ -12,6 +12,10 @@ impl Recorder {
         self.bits.len()
     }
 
+    pub(crate) fn set(&mut self, index: usize, bit: bool) {
+        self.bits[index] = bit;
+    }
+
     pub fn rec(&self, offset: i32) -> Option<bool> {
         if offset >= 0 {
             return None;

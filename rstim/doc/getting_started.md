@@ -137,6 +137,35 @@ Output:
 Detector fired 99/1000 times (~10% expected)
 ```
 
+## Atom loss and SSR readout error
+
+`LOSS(p)` marks each target qubit as physically lost with probability `p`.
+Loss persists until reset. The loss-visible measurement family (`ML`, `MXL`,
+`MYL`, `MZL`, `MRL`, `MRXL`, `MRYL`, and `MRZL`) writes two bits per target:
+the loss flag followed by the basis-measurement value.
+
+By default the loss flag is ideal. Add one argument to model a symmetric SSR
+classification error:
+
+```text
+LOSS(1) 0
+MRL(0.01) 0
+```
+
+Here `MRL(0.01)` swaps the loss/non-loss classification with probability
+`0.01`. On a classification error the emitted loss flag is inverted and the
+value bit is replaced by an unbiased random bit. The probability must be finite
+and in `[0, 1]`. This noise does not change the persistent physical-loss state
+or reset behavior. In particular, a false-negative `MRL` still resets and
+recovers the physically lost qubit.
+
+Consumers that use the conventional fixed-observable interpretation can
+canonicalize the don't-care value of every reported-loss outcome to `1` before
+computing detector and observable parities.
+
+This SSR classification channel is distinct from inserting `LOSS(p)` before a
+measurement, which models additional physical atom loss at measurement time.
+
 ## Generate QEC circuits
 
 rstim includes code generators for standard QEC experiments. These produce

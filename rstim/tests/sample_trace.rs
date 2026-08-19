@@ -122,6 +122,30 @@ fn traced_execution_orders_loss_visible_measurement_components_loss_flag_then_va
 }
 
 #[test]
+fn traced_execution_records_ssr_loss_flag_readout_flip() {
+    let instrs = parse_lines("ML(1) 0\n").unwrap();
+    let mut ex = Executor::from_instrs(instrs).unwrap();
+    let mut rng = StdRng::seed_from_u64(1);
+
+    let (out, trace) = ex.run_with_trace(&mut rng).unwrap();
+
+    assert_eq!(out.measurements, vec![true, false]);
+    assert_eq!(trace.noise_events.len(), 1);
+    assert_eq!(trace.noise_events[0].branch_label.as_deref(), Some("flip"));
+    assert_eq!(trace.measurement_events.len(), 2);
+    assert!(trace.measurement_events[0].bit);
+    assert_eq!(
+        trace.measurement_events[0].component,
+        MeasurementComponent::LossFlag
+    );
+    assert!(!trace.measurement_events[1].bit);
+    assert_eq!(
+        trace.measurement_events[1].component,
+        MeasurementComponent::Value
+    );
+}
+
+#[test]
 fn traced_execution_tracks_repeat_iterations_in_process() {
     let instrs = parse_lines("REPEAT 2 {\n  LOSS(1) 0\n  M 0\n  DETECTOR rec[-1]\n}\n").unwrap();
     let mut ex = Executor::from_instrs(instrs).unwrap();

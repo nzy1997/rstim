@@ -1555,7 +1555,8 @@ fn measurement_flip_sites_for_op(
         .filter_map(|(slot, target)| target.qubit_index().map(|qubit| (slot, qubit)))
         .collect::<Vec<_>>();
     match name {
-        "MPAD" => target_entries
+        "ML" | "MZL" | "MXL" | "MYL" | "MRL" | "MRZL" | "MRXL" | "MRYL"
+        | "MPAD" => target_entries
             .into_iter()
             .map(|(slot, qubit)| SiteDescriptor {
                 kind,
@@ -2201,15 +2202,15 @@ mod tests {
     fn measurement_flip_arguments_enter_the_read_only_event_catalog() {
         let mut shot = EditableShot::open(
             "MPAD(1) 0 1\nMXX(1) 2 3 4 5\nMYY(1) 6 7\nMZZ(1) 8 9\n\
-             MPP(1) X10*X11 Z12\nMXX 13 14\n",
+             MPP(1) X10*X11 Z12\nML(1) 15\nMXX 13 14\n",
             ExpansionLimits::default(),
             23,
         )
         .unwrap();
 
         let sites = shot.session().catalog().sites();
-        assert_eq!(sites.len(), 8);
-        assert_eq!(shot.session().catalog().events().len(), 8);
+        assert_eq!(sites.len(), 9);
+        assert_eq!(shot.session().catalog().events().len(), 9);
         assert_eq!(
             sites
                 .iter()
@@ -2224,6 +2225,7 @@ mod tests {
                 ("MZZ", &[0, 1][..]),
                 ("MPP", &[0][..]),
                 ("MPP", &[1][..]),
+                ("ML", &[0][..]),
             ]
         );
         assert!(sites.iter().all(|site| {
@@ -2257,7 +2259,7 @@ mod tests {
                 .svg
                 .matches("class=\"noise-site measurement\"")
                 .count(),
-            8
+            9
         );
         for id in &ids {
             assert!(
@@ -2266,7 +2268,7 @@ mod tests {
                     .contains(&format!("data-noise-event-id=\"{id}\""))
             );
         }
-        for instruction in ["MPAD", "MXX", "MYY", "MZZ", "MPP"] {
+        for instruction in ["MPAD", "MXX", "MYY", "MZZ", "MPP", "ML"] {
             assert!(
                 noiseless.warnings.iter().any(|warning| {
                     warning.contains(instruction) && warning.contains("read-only")

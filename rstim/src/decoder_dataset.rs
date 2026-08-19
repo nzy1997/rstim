@@ -480,6 +480,63 @@ fn copy_shot(src: &BitTable, src_shot: usize, dst: &mut BitTable, dst_shot: usiz
     }
 }
 
+fn canonicalize_reported_loss_values(
+    instrs: &[crate::ir::StimInstr],
+    measurements: &BitTable,
+) -> Result<BitTable, String> {
+    fn visit(
+        instrs: &[crate::ir::StimInstr],
+        measurements: &mut BitTable,
+        measurement_index: &mut usize,
+    ) -> Result<(), String> {
+        for instr in instrs {
+            match instr {
+                crate::ir::StimInstr::Repeat { count, body } => {
+                    for _ in 0..*count {
+                        visit(body, measurements, measurement_index)?;
+                    }
+                }
+                crate::ir::StimInstr::Op { name, targets, .. }
+                    if matches!(
+                        name.as_str(),
+                        "ML" | "MZL" | "MXL" | "MYL" | "MRL" | "MRZL" | "MRXL" | "MRYL"
+                    ) =>
+                {
+                    let target_count = targets
+                        .iter()
+                        .filter(|target| target.qubit_index().is_some())
+                        .count();
+                    for _ in 0..target_count {
+                        let loss_flag_index = *measurement_index;
+                        let value_index = loss_flag_index + 1;
+                        for shot in 0..measurements.num_minor() {
+                            if measurements.get(loss_flag_index, shot) {
+                                measurements.set(value_index, shot, true);
+                            }
+                        }
+                        *measurement_index += 2;
+                    }
+                }
+                _ => {
+                    *measurement_index += crate::stats::num_measurements(std::slice::from_ref(instr));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let mut canonical = measurements.clone();
+    let mut measurement_index = 0;
+    visit(instrs, &mut canonical, &mut measurement_index)?;
+    if measurement_index != measurements.num_major() {
+        return Err(format!(
+            "loss-visible measurement wrapper counted {measurement_index} measurements, but the sample has {}",
+            measurements.num_major()
+        ));
+    }
+    Ok(canonical)
+}
+
 #[doc(hidden)]
 pub fn generate_decoder_dataset_artifacts(
     config: &ExportDecoderDatasetConfig,
@@ -572,8 +629,12 @@ pub fn generate_decoder_dataset_artifacts_with_logical_flip(
                 }
             }
 
-            let public_interpretation =
-                crate::m2d::measurements_to_detections(&validated.public_instrs, &measurements)?;
+            let logical_measurements =
+                canonicalize_reported_loss_values(&validated.public_instrs, &measurements)?;
+            let public_interpretation = crate::m2d::measurements_to_detections(
+                &validated.public_instrs,
+                &logical_measurements,
+            )?;
             let mut answers = BitTable::try_new(1, config.shots)
                 .map_err(|err| format!("BitTable allocation failed: {err:?}"))?;
             for shot in 0..config.shots {
@@ -1276,6 +1337,31 @@ mod tests {
         }
         assert!(saw_zero);
         assert!(saw_one);
+    }
+
+    #[test]
+    fn blinded_answers_canonicalize_reported_loss_values_before_observable_parity() {
+        let circuit =
+            "R 0\n# RSTIM_LOGICAL_FLIP_POINT\nML(1) 0\nOBSERVABLE_INCLUDE(0) rec[-1]\n";
+        let mut config = test_config(
+            circuit,
+            DecoderDatasetMode::MeasurementsBlinded,
+            logical_x(vec![0]),
+        );
+        config.shots = 64;
+        config.seed = Some(0x55_52_52);
+
+        let artifacts = generate_decoder_dataset_artifacts_with_logical_flip(&config).unwrap();
+        let masks = artifacts.masks.as_ref().unwrap();
+        let mut saw_random_zero = false;
+        let mut saw_random_one = false;
+        for shot in 0..config.shots {
+            assert!(artifacts.public_shots.get(0, shot));
+            saw_random_zero |= !artifacts.public_shots.get(1, shot);
+            saw_random_one |= artifacts.public_shots.get(1, shot);
+            assert_eq!(artifacts.answers.get(0, shot), true ^ masks.get(0, shot));
+        }
+        assert!(saw_random_zero && saw_random_one);
     }
 
     #[test]

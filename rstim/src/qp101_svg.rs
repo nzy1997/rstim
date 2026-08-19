@@ -1142,7 +1142,8 @@ fn measurement_flip_target_slots(
         return Vec::new();
     }
     match gate {
-        "MPAD" => (0..raw_targets.map_or(targets.len(), <[_]>::len))
+        "ML" | "MZL" | "MXL" | "MYL" | "MRL" | "MRZL" | "MRXL" | "MRYL"
+        | "MPAD" => (0..raw_targets.map_or(targets.len(), <[_]>::len))
             .map(|slot| vec![slot])
             .collect(),
         "MXX" | "MYY" | "MZZ" => (0..targets.len() / 2)

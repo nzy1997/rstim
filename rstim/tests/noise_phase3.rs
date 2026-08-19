@@ -295,9 +295,59 @@ fn ml_reports_loss_flag_then_value_bit() {
 }
 
 #[test]
+fn loss_visible_measurement_argument_swaps_the_ssr_classification() {
+    let m = run("R 0\nML(1) 0\nLOSS(1) 1\nML(1) 1\n");
+    assert!(m[0]);
+    assert!(!m[2]);
+}
+
+#[test]
+fn ssr_classification_error_randomizes_the_exported_value_bit() {
+    for program in ["ML(1) 0\n", "LOSS(1) 0\nML(1) 0\n"] {
+        let values = (0..64)
+            .map(|seed| run_seed(program, seed)[1])
+            .collect::<Vec<_>>();
+        assert!(values.iter().any(|&bit| bit));
+        assert!(values.iter().any(|&bit| !bit));
+    }
+}
+
+#[test]
+fn ssr_readout_error_applies_to_every_loss_visible_measurement_variant() {
+    for gate in ["ML", "MZL", "MXL", "MYL", "MRL", "MRZL", "MRXL", "MRYL"] {
+        let live = run(&format!("{gate}(1) 0\n"));
+        assert!(live[0], "{gate} should report a false positive at p=1");
+
+        let lost = run(&format!("LOSS(1) 0\n{gate}(1) 0\n"));
+        assert!(!lost[0], "{gate} should report a false negative at p=1");
+    }
+}
+
+#[test]
+fn loss_visible_measurement_rejects_invalid_ssr_readout_arguments() {
+    for program in ["ML(-0.1) 0\n", "ML(1.1) 0\n", "ML(0.1,0.2) 0\n"] {
+        let instrs = parse_lines(program).unwrap();
+        let mut ex = Executor::from_instrs(instrs).unwrap();
+        let mut rng = StdRng::seed_from_u64(42);
+        let error = match ex.run(&mut rng) {
+            Ok(_) => panic!("expected invalid SSR readout argument to fail"),
+            Err(error) => error,
+        };
+        assert!(error.contains("SSR readout error probability"), "{error}");
+    }
+}
+
+#[test]
 fn mrl_reports_loss_and_recovers_for_followup_measurement() {
     let m = run("LOSS(1) 0\nMRL 0\nM 0\n");
     assert_eq!(m, vec![true, true, false]);
+}
+
+#[test]
+fn noisy_mrl_recovers_using_true_loss_state_not_the_reported_flag() {
+    let m = run("LOSS(1) 0\nMRL(1) 0\nML 0\n");
+    assert!(!m[0], "the lost atom should be misclassified as present");
+    assert_eq!(&m[2..], &[false, false], "MRL should still replenish and reset");
 }
 
 #[test]
