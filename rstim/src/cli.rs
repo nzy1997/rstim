@@ -113,6 +113,15 @@ pub enum Commands {
         rounds: usize,
         #[arg(long = "after_clifford_depolarization", default_value = "0")]
         noise: f64,
+        /// Depolarization applied to data qubits at the start of each round.
+        #[arg(long = "before_round_data_depolarization", default_value = "0")]
+        before_round_data_depolarization: f64,
+        /// Bit-flip probability applied immediately before each measurement.
+        #[arg(long = "before_measure_flip_probability", default_value = "0")]
+        before_measure_flip_probability: f64,
+        /// Bit-flip probability applied immediately after each reset.
+        #[arg(long = "after_reset_flip_probability", default_value = "0")]
+        after_reset_flip_probability: f64,
         #[arg(long = "after_clifford_loss_probability", default_value = "0")]
         after_clifford_loss_probability: f64,
         /// Operation-loss probability for gates and resets in Mid-SWAP circuits.
@@ -515,6 +524,9 @@ fn run_command(command: Option<Commands>) -> Result<(), String> {
             distance,
             rounds,
             noise,
+            before_round_data_depolarization,
+            before_measure_flip_probability,
+            after_reset_flip_probability,
             after_clifford_loss_probability,
             operation_loss_probability,
             measurement_loss_probability,
@@ -530,6 +542,15 @@ fn run_command(command: Option<Commands>) -> Result<(), String> {
                 if after_clifford_loss_probability != 0.0 {
                     return Err(
                         "after_clifford_loss_probability is not used by the Mid-SWAP task; use operation_loss_probability"
+                            .to_string(),
+                    );
+                }
+                if before_round_data_depolarization != 0.0
+                    || before_measure_flip_probability != 0.0
+                    || after_reset_flip_probability != 0.0
+                {
+                    return Err(
+                        "before_round_data_depolarization, before_measure_flip_probability and after_reset_flip_probability are not used by the Mid-SWAP task; --after_clifford_depolarization sets its Pauli-noise rate"
                             .to_string(),
                     );
                 }
@@ -550,9 +571,33 @@ fn run_command(command: Option<Commands>) -> Result<(), String> {
                     .write_all(circuit.as_bytes())
                     .map_err(|error| format!("write error: {error}"));
             }
+            let is_conventional_z = code == "surface_code" && task == "rotated_memory_z";
+            if is_conventional_z
+                && (operation_loss_probability != 0.0 || measurement_loss_probability != 0.0)
+            {
+                let distance = distance
+                    .ok_or_else(|| "distance is required for common generators".to_string())?;
+                let circuit = crate::codegen::surface_code::rotated_memory_z_loss_visible(
+                    distance,
+                    rounds,
+                    crate::codegen::surface_code::RotatedMemoryZLossConfig {
+                        before_round_data_depolarization,
+                        after_clifford_depolarization: noise,
+                        before_measure_flip_probability,
+                        after_reset_flip_probability,
+                        operation_loss_probability,
+                        measurement_loss_probability,
+                        after_clifford_loss_probability,
+                    },
+                )?;
+                let mut writer = open_output(out.as_deref())?;
+                return writer
+                    .write_all(circuit.as_bytes())
+                    .map_err(|error| format!("write error: {error}"));
+            }
             if operation_loss_probability != 0.0 || measurement_loss_probability != 0.0 {
                 return Err(
-                    "operation_loss_probability and measurement_loss_probability are only valid for surface_code/rotated_memory_z_midswap"
+                    "operation_loss_probability and measurement_loss_probability are only valid for surface_code/rotated_memory_z and surface_code/rotated_memory_z_midswap"
                         .to_string(),
                 );
             }
@@ -576,8 +621,13 @@ fn run_command(command: Option<Commands>) -> Result<(), String> {
                 let distance = distance
                     .ok_or_else(|| "distance is required for common generators".to_string())?;
                 let mut w = open_output(out.as_deref())?;
-                let mut params = NoiseParams::uniform(noise);
-                params.after_clifford_loss_probability = after_clifford_loss_probability;
+                let params = NoiseParams {
+                    before_round_data_depolarization,
+                    after_clifford_depolarization: noise,
+                    before_measure_flip_probability,
+                    after_reset_flip_probability,
+                    after_clifford_loss_probability,
+                };
                 run_gen_with_params(&code, &task, distance, rounds, params, &mut w)
             }
         }
@@ -3825,6 +3875,9 @@ mod tests {
                 distance: None,
                 rounds: 2,
                 noise: 0.0,
+                before_round_data_depolarization: 0.0,
+                before_measure_flip_probability: 0.0,
+                after_reset_flip_probability: 0.0,
                 after_clifford_loss_probability: 0.0,
                 operation_loss_probability: 0.0,
                 measurement_loss_probability: 0.0,
@@ -4028,6 +4081,9 @@ mod tests {
                 distance: None,
                 rounds: 1,
                 noise: 0.0,
+                before_round_data_depolarization: 0.0,
+                before_measure_flip_probability: 0.0,
+                after_reset_flip_probability: 0.0,
                 after_clifford_loss_probability: 0.0,
                 operation_loss_probability: 0.0,
                 measurement_loss_probability: 0.0,
