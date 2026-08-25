@@ -537,6 +537,43 @@ fn run_command(command: Option<Commands>) -> Result<(), String> {
             observables,
             out,
         }) => {
+            for (name, value) in [
+                ("after_clifford_depolarization", noise),
+                (
+                    "before_round_data_depolarization",
+                    before_round_data_depolarization,
+                ),
+                (
+                    "before_measure_flip_probability",
+                    before_measure_flip_probability,
+                ),
+                (
+                    "after_reset_flip_probability",
+                    after_reset_flip_probability,
+                ),
+                (
+                    "after_clifford_loss_probability",
+                    after_clifford_loss_probability,
+                ),
+                ("operation_loss_probability", operation_loss_probability),
+                (
+                    "measurement_loss_probability",
+                    measurement_loss_probability,
+                ),
+            ] {
+                if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                    return Err(format!(
+                        "{name} must be finite and in [0, 1], got {value}"
+                    ));
+                }
+            }
+            let params = NoiseParams {
+                before_round_data_depolarization,
+                after_clifford_depolarization: noise,
+                before_measure_flip_probability,
+                after_reset_flip_probability,
+                after_clifford_loss_probability,
+            };
             let is_midswap = code == "surface_code" && task == "rotated_memory_z_midswap";
             if is_midswap {
                 if after_clifford_loss_probability != 0.0 {
@@ -609,7 +646,7 @@ fn run_command(command: Option<Commands>) -> Result<(), String> {
                     hz.as_deref(),
                     basis.as_deref(),
                     rounds,
-                    noise,
+                    params,
                     &schedule,
                     observables.as_deref(),
                     &mut buffer,
@@ -621,13 +658,6 @@ fn run_command(command: Option<Commands>) -> Result<(), String> {
                 let distance = distance
                     .ok_or_else(|| "distance is required for common generators".to_string())?;
                 let mut w = open_output(out.as_deref())?;
-                let params = NoiseParams {
-                    before_round_data_depolarization,
-                    after_clifford_depolarization: noise,
-                    before_measure_flip_probability,
-                    after_reset_flip_probability,
-                    after_clifford_loss_probability,
-                };
                 run_gen_with_params(&code, &task, distance, rounds, params, &mut w)
             }
         }
@@ -2317,7 +2347,7 @@ pub fn run_css_gen(
     hz_path: Option<&str>,
     basis: Option<&str>,
     rounds: usize,
-    noise: f64,
+    noise: NoiseParams,
     schedule: &str,
     observables_path: Option<&str>,
     out: &mut dyn Write,
@@ -2363,7 +2393,7 @@ pub fn run_css_gen(
             num_data_qubits: hx.num_cols,
         },
         rounds,
-        noise: NoiseParams::uniform(noise),
+        noise,
         basis,
         schedule,
         observables,
@@ -3912,7 +3942,7 @@ mod tests {
             Some(&hz),
             Some("x"),
             1,
-            0.0,
+            NoiseParams::none(),
             "greedy",
             None,
             &mut out,
@@ -3960,7 +3990,7 @@ mod tests {
             None,
             None,
             1,
-            0.0,
+            NoiseParams::none(),
             "greedy",
             None,
             &mut Vec::new(),
@@ -3974,7 +4004,7 @@ mod tests {
             Some(&hz),
             Some("x"),
             1,
-            0.0,
+            NoiseParams::none(),
             "greedy",
             None,
             &mut Vec::new(),
@@ -3988,7 +4018,7 @@ mod tests {
             None,
             Some("x"),
             1,
-            0.0,
+            NoiseParams::none(),
             "greedy",
             None,
             &mut Vec::new(),
@@ -4002,7 +4032,7 @@ mod tests {
             Some(&hz_wide),
             Some("x"),
             1,
-            0.0,
+            NoiseParams::none(),
             "greedy",
             None,
             &mut Vec::new(),
@@ -4016,7 +4046,7 @@ mod tests {
             Some(&hz),
             Some("x"),
             1,
-            0.0,
+            NoiseParams::none(),
             "greedy",
             Some(&obs_wide),
             &mut Vec::new(),
@@ -4030,7 +4060,7 @@ mod tests {
             Some(&hz),
             None,
             1,
-            0.0,
+            NoiseParams::none(),
             "greedy",
             None,
             &mut Vec::new(),
@@ -4044,7 +4074,7 @@ mod tests {
             Some(&hz),
             Some("y"),
             1,
-            0.0,
+            NoiseParams::none(),
             "greedy",
             None,
             &mut Vec::new(),
@@ -4058,7 +4088,7 @@ mod tests {
             Some(&hz),
             Some("x"),
             1,
-            0.0,
+            NoiseParams::none(),
             "layered",
             None,
             &mut Vec::new(),

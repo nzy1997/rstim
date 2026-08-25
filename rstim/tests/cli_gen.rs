@@ -977,3 +977,120 @@ fn gen_rotated_memory_z_explicit_noise_and_loss() {
         String::from_utf8_lossy(&uniform.stderr)
     );
 }
+
+#[test]
+fn gen_css_uses_explicit_noise_channels() {
+    let dir = tempfile::tempdir().unwrap();
+    let hx = dir.path().join("hx.json");
+    let hz = dir.path().join("hz.json");
+    std::fs::write(
+        &hx,
+        r#"{"format":"sparse_rows","num_cols":7,"rows":[[0,3,5,6],[1,3,4,6],[2,4,5,6]]}"#,
+    )
+    .unwrap();
+    std::fs::write(&hz, r#"{"format":"sparse_rows","num_cols":7,"rows":[]}"#).unwrap();
+
+    // Only the after-Clifford channel set: nothing may broadcast into the
+    // reset or measurement flip channels.
+    let depol_only = rstim_cmd()
+        .args([
+            "gen",
+            "--code",
+            "css",
+            "--task",
+            "memory",
+            "--hx",
+            hx.to_str().unwrap(),
+            "--hz",
+            hz.to_str().unwrap(),
+            "--basis",
+            "x",
+            "--rounds",
+            "2",
+            "--after_clifford_depolarization",
+            "0.123",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        depol_only.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&depol_only.stderr)
+    );
+    let depol_text = String::from_utf8(depol_only.stdout).unwrap();
+    assert!(depol_text.contains("DEPOLARIZE"));
+    assert!(
+        !depol_text.contains("X_ERROR(0.123)"),
+        "after_clifford_depolarization must not broadcast into CSS flip channels:\n{depol_text}"
+    );
+
+    // Explicitly named channels land in their own slots.
+    let explicit = rstim_cmd()
+        .args([
+            "gen",
+            "--code",
+            "css",
+            "--task",
+            "memory",
+            "--hx",
+            hx.to_str().unwrap(),
+            "--hz",
+            hz.to_str().unwrap(),
+            "--basis",
+            "x",
+            "--rounds",
+            "2",
+            "--before_measure_flip_probability",
+            "0.05",
+            "--after_reset_flip_probability",
+            "0.06",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        explicit.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&explicit.stderr)
+    );
+    let explicit_text = String::from_utf8(explicit.stdout).unwrap();
+    assert!(explicit_text.contains("X_ERROR(0.05)"));
+    assert!(explicit_text.contains("X_ERROR(0.06)"));
+    assert!(!explicit_text.contains("DEPOLARIZE"));
+}
+
+#[test]
+fn gen_rejects_out_of_range_probabilities() {
+    for (flag, value) in [
+        ("--before_round_data_depolarization", "2"),
+        ("--after_clifford_depolarization", "NaN"),
+        ("--before_measure_flip_probability", "-0.1"),
+        ("--after_reset_flip_probability", "1.5"),
+        ("--after_clifford_loss_probability", "2"),
+        ("--before_measure_flip_probability", "inf"),
+    ] {
+        let output = rstim_cmd()
+            .args([
+                "gen",
+                "--code",
+                "repetition_code",
+                "--task",
+                "memory",
+                "--distance",
+                "3",
+                "--rounds",
+                "1",
+                &format!("{flag}={value}"),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            !output.status.success(),
+            "{flag} {value} unexpectedly succeeded"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("finite and in [0, 1]"),
+            "{flag} {value}: stderr: {stderr}"
+        );
+    }
+}
