@@ -1,7 +1,9 @@
 use rstim::m2d::{
     measurements_to_loss_aware_detections, measurements_to_loss_aware_detections_with_loss_mask,
-    LossAwareDetectorCheck,
+    measurements_to_loss_aware_detections_with_loss_mask_and_limits, LossAwareDetectorCheck,
+    LossAwareM2dLimits,
 };
+use rstim::measurement_transform::{CheckedMeasurementLayout, MeasurementTransformLimits};
 use rstim::parser::parse_lines;
 use rstim::sim::bit_table::BitTable;
 
@@ -114,6 +116,30 @@ fn embedded_loss_flags_derive_a_distinct_mask_for_each_shot() {
 }
 
 #[test]
+fn explicit_mask_is_unioned_with_authoritative_embedded_flags() {
+    let circuit = parse_lines("ML 0\nDETECTOR rec[-1]\n").unwrap();
+    let empty_mask = loss_mask(2, &[]);
+
+    let placeholder_zero = measurements_to_loss_aware_detections_with_loss_mask(
+        &circuit,
+        &single_shot(&[true, false]),
+        &empty_mask,
+    )
+    .unwrap();
+    let placeholder_one = measurements_to_loss_aware_detections_with_loss_mask(
+        &circuit,
+        &single_shot(&[true, true]),
+        &empty_mask,
+    )
+    .unwrap();
+
+    assert_eq!(placeholder_zero, placeholder_one);
+    assert_eq!(placeholder_zero.shots[0].lost_measurements, [1]);
+    assert_eq!(placeholder_zero.shots[0].detector_valid, [false]);
+    assert!(placeholder_zero.shots[0].checks.is_empty());
+}
+
+#[test]
 fn repeat_expansion_preserves_loss_visible_record_pairs() {
     let circuit = parse_lines("REPEAT 2 {\n  ML 0\n  DETECTOR rec[-1]\n}\n").unwrap();
     let measurements = single_shot(&[true, true, false, true]);
@@ -124,6 +150,35 @@ fn repeat_expansion_preserves_loss_visible_record_pairs() {
     assert_eq!(output.shots[0].detector_valid, [false, true]);
     assert_eq!(output.shots[0].checks.len(), 1);
     assert_eq!(output.shots[0].checks[0].source_detectors, [1]);
+}
+
+#[test]
+fn nested_repeats_and_multi_target_measurements_keep_all_flag_value_pairs() {
+    let circuit = parse_lines("REPEAT 2 {\n  REPEAT 2 {\n    MRL 0 1\n  }\n}\n").unwrap();
+    let layout = CheckedMeasurementLayout::from_circuit_with_limits(
+        &circuit,
+        MeasurementTransformLimits::default(),
+    )
+    .unwrap();
+
+    assert_eq!(layout.num_measurements(), 16);
+    assert_eq!(
+        layout
+            .loss_visible_measurements()
+            .iter()
+            .map(|pair| (pair.flag, pair.value))
+            .collect::<Vec<_>>(),
+        [
+            (0, 1),
+            (2, 3),
+            (4, 5),
+            (6, 7),
+            (8, 9),
+            (10, 11),
+            (12, 13),
+            (14, 15),
+        ]
+    );
 }
 
 #[test]
@@ -151,4 +206,53 @@ fn rejects_loss_flag_terms_and_malformed_explicit_masks() {
     )
     .unwrap_err();
     assert!(error.contains("measurement_loss_mask has 1 bits"));
+
+    let observable_references_flag = parse_lines("ML 0\nOBSERVABLE_INCLUDE(0) rec[-2]\n").unwrap();
+    let error = measurements_to_loss_aware_detections(
+        &observable_references_flag,
+        &single_shot(&[false, false]),
+    )
+    .unwrap_err();
+    assert!(error.contains("observable 0 references loss-flag record 0"));
+}
+
+#[test]
+fn configurable_work_limits_fail_before_unbounded_elimination() {
+    let circuit =
+        parse_lines("M 0\nM 0\nM 0\nDETECTOR rec[-3] rec[-2]\nDETECTOR rec[-2] rec[-1]\n").unwrap();
+    let error = measurements_to_loss_aware_detections_with_loss_mask_and_limits(
+        &circuit,
+        &single_shot(&[false, false, false]),
+        &loss_mask(3, &[1]),
+        LossAwareM2dLimits {
+            max_pivots_per_shot: 0,
+            ..LossAwareM2dLimits::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.contains("max_pivots_per_shot"));
+
+    let error = measurements_to_loss_aware_detections_with_loss_mask_and_limits(
+        &circuit,
+        &single_shot(&[false, false, false]),
+        &loss_mask(3, &[1]),
+        LossAwareM2dLimits {
+            max_elimination_steps: 0,
+            ..LossAwareM2dLimits::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.contains("max_elimination_steps"));
+
+    let error = measurements_to_loss_aware_detections_with_loss_mask_and_limits(
+        &circuit,
+        &single_shot(&[false, false, false]),
+        &loss_mask(3, &[1]),
+        LossAwareM2dLimits {
+            max_materialized_terms: 0,
+            ..LossAwareM2dLimits::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.contains("max_materialized_terms"));
 }

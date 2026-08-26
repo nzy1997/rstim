@@ -10,7 +10,8 @@ The reference implementation is [`rstim/src/m2d.rs`](../../rstim/src/m2d.rs):
 - `measurements_to_loss_aware_detections` derives loss from interleaved
   loss-visible `flag,value` records;
 - `measurements_to_loss_aware_detections_with_loss_mask` accepts an explicit
-  same-shape measurement-loss mask.
+  same-shape measurement-loss mask. Embedded flags remain authoritative and
+  are unioned into that mask.
 
 ## 1. Why a lost value is not a binary measurement
 
@@ -26,7 +27,8 @@ For every shot, keep the two channels separate:
 2. `measurement_loss_mask[m]` says whether that payload is unknown.
 
 Changing `measurement_bits[m]` at every masked position must not change any
-loss-aware check value or decoder answer. The v1 tests enforce this invariant.
+loss-aware check value. The v1 tests enforce this API-level invariant;
+decoder-answer invariance belongs to the follow-up integration.
 
 For an `ML`/`MRL`-family instruction, records are interleaved as
 `flag,value`. A set flag marks the paired value as lost. Flags are metadata and
@@ -74,15 +76,22 @@ D_t xor D_(t+1) = m_(t-1) xor m_(t+1).
 
 The API returns one check with `source_detectors = [t, t+1]`.
 
-### Spatial and propagated atom loss
+### Scope: measurement-record erasure
 
 The explicit-mask API operates on missing **measurement records**. A physical
 data-atom loss can invalidate several neighboring stabilizer measurements
-because later gates are skipped. The circuit/loss compiler must first
-propagate the physical loss window and mark every affected stabilizer value as
-unknown. Once that semantic mask is available, the same GF(2) construction
-combines neighboring checks and cancels the lost support. A flag at final data
-readout alone is not enough to infer that propagation.
+because later gates are skipped. Marking two distinct stabilizer records lost
+in this v1 mask treats them as two independent unknown columns; it does **not**
+assert that they contain the same latent contribution and therefore does not,
+by itself, construct the spatial supercheck around a lost data atom.
+
+The delayed-erasure compiler must propagate the physical loss window and
+either rewrite the stabilizer/check rows or provide incidence from affected
+records to shared latent loss variables. Only then is it valid to cancel a
+common data-atom contribution across distinct measurement records. A flag at
+final data readout alone is insufficient. V1 is consequently the complete
+contract for measurement-record erasure and temporal superchecks, not yet for
+spatial code deformation.
 
 ## 3. Output contract
 
@@ -101,6 +110,12 @@ input introduced by issue 664 as the training/evaluation answer.
 Legacy `measurements_to_detections` and CLI `m2d` remain unchanged. Their
 binary output is suitable only when all referenced measurements are present,
 or as an explicitly named baseline that does not claim to be loss aware.
+
+`LossAwareM2dLimits` bounds pivots per shot, elimination steps, and cumulative
+sparse terms materialized across the batch. Exceeding a bound returns an
+actionable error. The convenience APIs use conservative defaults; callers
+processing untrusted or very large batches can call the explicit limits entry
+point.
 
 ## 4. Decoder and neural-network representations
 
@@ -139,11 +154,12 @@ The follow-up delayed-erasure integration must:
 
 1. enumerate loss onset envelopes consistent with each herald;
 2. propagate skipped-gate effects;
-3. transform every error mechanism through the shot's check basis;
-4. merge mechanisms with the same detector/observable effect;
-5. represent a shared unknown bit as one correlated gauge mechanism, not as
+3. derive shared latent-loss incidence or rewritten spatial superchecks;
+4. transform every error mechanism through the shot's check basis;
+5. merge mechanisms with the same detector/observable effect;
+6. represent a shared unknown bit as one correlated gauge mechanism, not as
    independent 50% flips on adjacent detectors;
-6. emit a shot-conditioned DEM/matching graph and verify decoder-level
+7. emit a shot-conditioned DEM/matching graph and verify decoder-level
    placeholder invariance.
 
 ## 6. Research basis and alternatives

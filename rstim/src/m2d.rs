@@ -2,7 +2,7 @@ use crate::data_path::{build_reference_sample, ReferenceSampleMode};
 use crate::ir::StimInstr;
 use crate::measurement_transform::{CheckedMeasurementLayout, MeasurementTransformLimits};
 use crate::sim::bit_table::BitTable;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 pub struct M2dOutput {
     pub detections: BitTable,
@@ -41,6 +41,24 @@ pub struct LossAwareDetectorShot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LossAwareM2dOutput {
     pub shots: Vec<LossAwareDetectorShot>,
+}
+
+/// Resource limits for shot-conditioned loss elimination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LossAwareM2dLimits {
+    pub max_pivots_per_shot: usize,
+    pub max_elimination_steps: u64,
+    pub max_materialized_terms: u64,
+}
+
+impl Default for LossAwareM2dLimits {
+    fn default() -> Self {
+        Self {
+            max_pivots_per_shot: 1_000_000,
+            max_elimination_steps: 100_000_000,
+            max_materialized_terms: 100_000_000,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,7 +142,13 @@ pub fn measurements_to_loss_aware_detections(
     .map_err(|err| err.to_string())?;
     validate_loss_flag_references(&layout)?;
     let loss_mask = loss_mask_from_loss_visible_measurements(&layout, meas_table)?;
-    measurements_to_loss_aware_detections_with_layout(instrs, meas_table, &loss_mask, &layout)
+    measurements_to_loss_aware_detections_with_layout(
+        instrs,
+        meas_table,
+        &loss_mask,
+        &layout,
+        LossAwareM2dLimits::default(),
+    )
 }
 
 /// Convert measurements with an explicit, same-shape measurement-loss mask.
@@ -137,6 +161,21 @@ pub fn measurements_to_loss_aware_detections_with_loss_mask(
     meas_table: &BitTable,
     measurement_loss_mask: &BitTable,
 ) -> Result<LossAwareM2dOutput, String> {
+    measurements_to_loss_aware_detections_with_loss_mask_and_limits(
+        instrs,
+        meas_table,
+        measurement_loss_mask,
+        LossAwareM2dLimits::default(),
+    )
+}
+
+/// Explicit-mask conversion with caller-selected sparse-elimination limits.
+pub fn measurements_to_loss_aware_detections_with_loss_mask_and_limits(
+    instrs: &[StimInstr],
+    meas_table: &BitTable,
+    measurement_loss_mask: &BitTable,
+    limits: LossAwareM2dLimits,
+) -> Result<LossAwareM2dOutput, String> {
     let layout = CheckedMeasurementLayout::from_circuit_with_limits(
         instrs,
         MeasurementTransformLimits::default(),
@@ -148,6 +187,7 @@ pub fn measurements_to_loss_aware_detections_with_loss_mask(
         meas_table,
         measurement_loss_mask,
         &layout,
+        limits,
     )
 }
 
@@ -156,30 +196,55 @@ fn measurements_to_loss_aware_detections_with_layout(
     meas_table: &BitTable,
     measurement_loss_mask: &BitTable,
     layout: &CheckedMeasurementLayout,
+    limits: LossAwareM2dLimits,
 ) -> Result<LossAwareM2dOutput, String> {
     validate_loss_mask_shape(meas_table, measurement_loss_mask, layout.num_measurements())?;
+    let merged_loss_mask = merge_embedded_loss_flags(layout, meas_table, measurement_loss_mask)?;
+
+    let raw = measurements_to_detections(instrs, meas_table)?;
+    let mut shots = Vec::new();
+    shots
+        .try_reserve_exact(meas_table.num_minor())
+        .map_err(|_| "loss-aware output allocation failed".to_string())?;
+    let mut budget = LossAwareWorkBudget::new(limits);
+    for shot in 0..meas_table.num_minor() {
+        shots.push(build_loss_aware_shot(
+            layout.detector_rows(),
+            &raw.detections,
+            &merged_loss_mask,
+            shot,
+            &mut budget,
+        )?);
+    }
+    Ok(LossAwareM2dOutput { shots })
+}
+
+fn merge_embedded_loss_flags(
+    layout: &CheckedMeasurementLayout,
+    meas_table: &BitTable,
+    explicit_mask: &BitTable,
+) -> Result<BitTable, String> {
+    let mut merged = BitTable::try_new(explicit_mask.num_major(), explicit_mask.num_minor())
+        .map_err(|err| format!("failed to allocate merged measurement loss mask: {err:?}"))?;
+    for measurement in 0..explicit_mask.num_major() {
+        merged
+            .row_words_mut(measurement)
+            .copy_from_slice(explicit_mask.row_words(measurement));
+    }
     for pair in layout.loss_visible_measurements() {
-        for shot in 0..measurement_loss_mask.num_minor() {
-            if measurement_loss_mask.get(pair.flag, shot) {
+        for shot in 0..explicit_mask.num_minor() {
+            if explicit_mask.get(pair.flag, shot) {
                 return Err(format!(
                     "measurement_loss_mask marks loss-flag record {} as lost; mark its value record {} instead",
                     pair.flag, pair.value
                 ));
             }
+            if meas_table.get(pair.flag, shot) {
+                merged.set(pair.value, shot, true);
+            }
         }
     }
-
-    let raw = measurements_to_detections(instrs, meas_table)?;
-    let mut shots = Vec::with_capacity(meas_table.num_minor());
-    for shot in 0..meas_table.num_minor() {
-        shots.push(build_loss_aware_shot(
-            layout.detector_rows(),
-            &raw.detections,
-            measurement_loss_mask,
-            shot,
-        ));
-    }
-    Ok(LossAwareM2dOutput { shots })
+    Ok(merged)
 }
 
 fn loss_mask_from_loss_visible_measurements(
@@ -206,25 +271,24 @@ fn loss_mask_from_loss_visible_measurements(
 }
 
 fn validate_loss_flag_references(layout: &CheckedMeasurementLayout) -> Result<(), String> {
+    let mut flag_to_value = HashMap::<usize, usize>::new();
+    flag_to_value
+        .try_reserve(layout.loss_visible_measurements().len())
+        .map_err(|_| "loss-flag index allocation failed".to_string())?;
     for pair in layout.loss_visible_measurements() {
-        if let Some(detector) = layout
-            .detector_rows()
-            .iter()
-            .position(|row| row.binary_search(&pair.flag).is_ok())
-        {
+        flag_to_value.insert(pair.flag, pair.value);
+    }
+    for (detector, row) in layout.detector_rows().iter().enumerate() {
+        if let Some(&flag) = row.iter().find(|term| flag_to_value.contains_key(term)) {
             return Err(format!(
-                "detector {detector} references loss-flag record {}; detectors must reference measurement values",
-                pair.flag
+                "detector {detector} references loss-flag record {flag}; detectors must reference measurement values"
             ));
         }
-        if let Some(observable) = layout
-            .observable_rows()
-            .iter()
-            .position(|row| row.binary_search(&pair.flag).is_ok())
-        {
+    }
+    for (observable, row) in layout.observable_rows().iter().enumerate() {
+        if let Some(&flag) = row.iter().find(|term| flag_to_value.contains_key(term)) {
             return Err(format!(
-                "observable {observable} references loss-flag record {}; observables must reference measurement values",
-                pair.flag
+                "observable {observable} references loss-flag record {flag}; observables must reference measurement values"
             ));
         }
     }
@@ -264,31 +328,104 @@ struct LossPivot {
     detector_sources: Vec<usize>,
 }
 
+struct LossAwareWorkBudget {
+    limits: LossAwareM2dLimits,
+    elimination_steps: u64,
+    materialized_terms: u64,
+}
+
+impl LossAwareWorkBudget {
+    fn new(limits: LossAwareM2dLimits) -> Self {
+        Self {
+            limits,
+            elimination_steps: 0,
+            materialized_terms: 0,
+        }
+    }
+
+    fn charge_elimination_step(&mut self) -> Result<(), String> {
+        self.elimination_steps = self
+            .elimination_steps
+            .checked_add(1)
+            .ok_or_else(|| "loss-aware elimination exceeded max_elimination_steps".to_string())?;
+        if self.elimination_steps > self.limits.max_elimination_steps {
+            return Err("loss-aware elimination exceeded max_elimination_steps".to_string());
+        }
+        Ok(())
+    }
+
+    fn charge_terms(&mut self, terms: usize) -> Result<(), String> {
+        let terms = u64::try_from(terms)
+            .map_err(|_| "loss-aware elimination exceeded max_materialized_terms".to_string())?;
+        self.materialized_terms = self
+            .materialized_terms
+            .checked_add(terms)
+            .ok_or_else(|| "loss-aware elimination exceeded max_materialized_terms".to_string())?;
+        if self.materialized_terms > self.limits.max_materialized_terms {
+            return Err("loss-aware elimination exceeded max_materialized_terms".to_string());
+        }
+        Ok(())
+    }
+}
+
 fn build_loss_aware_shot(
     detector_rows: &[Vec<usize>],
     raw_detections: &BitTable,
     loss_mask: &BitTable,
     shot: usize,
-) -> LossAwareDetectorShot {
-    let lost_measurements: Vec<usize> = (0..loss_mask.num_major())
-        .filter(|&measurement| loss_mask.get(measurement, shot))
-        .collect();
-    let mut detector_valid = Vec::with_capacity(detector_rows.len());
-    let mut pivots = BTreeMap::<usize, LossPivot>::new();
+    budget: &mut LossAwareWorkBudget,
+) -> Result<LossAwareDetectorShot, String> {
+    let mut lost_measurements = Vec::new();
+    lost_measurements
+        .try_reserve(loss_mask.num_major().min(1024))
+        .map_err(|_| "loss-aware lost-measurement allocation failed".to_string())?;
+    for measurement in 0..loss_mask.num_major() {
+        if loss_mask.get(measurement, shot) {
+            budget.charge_terms(1)?;
+            lost_measurements
+                .try_reserve(1)
+                .map_err(|_| "loss-aware lost-measurement allocation failed".to_string())?;
+            lost_measurements.push(measurement);
+        }
+    }
+    let mut detector_valid = Vec::new();
+    detector_valid
+        .try_reserve_exact(detector_rows.len())
+        .map_err(|_| "loss-aware detector-valid allocation failed".to_string())?;
+    let mut pivots = HashMap::<usize, LossPivot>::new();
     let mut checks = Vec::new();
+    checks
+        .try_reserve(detector_rows.len().min(1024))
+        .map_err(|_| "loss-aware check allocation failed".to_string())?;
 
     for (detector, row) in detector_rows.iter().enumerate() {
-        let mut measurement_terms: Vec<usize> = row
-            .iter()
-            .copied()
-            .filter(|&measurement| loss_mask.get(measurement, shot))
-            .collect();
+        let mut measurement_terms = Vec::new();
+        measurement_terms
+            .try_reserve(row.len())
+            .map_err(|_| "loss-aware pivot allocation failed".to_string())?;
+        for &measurement in row {
+            if loss_mask.get(measurement, shot) {
+                budget.charge_terms(1)?;
+                measurement_terms.push(measurement);
+            }
+        }
         detector_valid.push(measurement_terms.is_empty());
-        let mut detector_sources = vec![detector];
+        let mut detector_sources = Vec::new();
+        detector_sources
+            .try_reserve_exact(1)
+            .map_err(|_| "loss-aware detector-source allocation failed".to_string())?;
+        detector_sources.push(detector);
+        budget.charge_terms(1)?;
         let mut became_pivot = false;
 
         while let Some(&pivot_measurement) = measurement_terms.first() {
             let Some(pivot) = pivots.get(&pivot_measurement) else {
+                if pivots.len() >= budget.limits.max_pivots_per_shot {
+                    return Err("loss-aware elimination exceeded max_pivots_per_shot".to_string());
+                }
+                pivots
+                    .try_reserve(1)
+                    .map_err(|_| "loss-aware pivot-map allocation failed".to_string())?;
                 pivots.insert(
                     pivot_measurement,
                     LossPivot {
@@ -299,14 +436,20 @@ fn build_loss_aware_shot(
                 became_pivot = true;
                 break;
             };
-            measurement_terms = symmetric_difference(&measurement_terms, &pivot.measurement_terms);
-            detector_sources = symmetric_difference(&detector_sources, &pivot.detector_sources);
+            budget.charge_elimination_step()?;
+            measurement_terms =
+                checked_symmetric_difference(&measurement_terms, &pivot.measurement_terms, budget)?;
+            detector_sources =
+                checked_symmetric_difference(&detector_sources, &pivot.detector_sources, budget)?;
         }
 
         if !became_pivot {
             let value = detector_sources
                 .iter()
                 .fold(false, |acc, &source| acc ^ raw_detections.get(source, shot));
+            checks
+                .try_reserve(1)
+                .map_err(|_| "loss-aware check allocation failed".to_string())?;
             checks.push(LossAwareDetectorCheck {
                 source_detectors: detector_sources,
                 value,
@@ -314,15 +457,27 @@ fn build_loss_aware_shot(
         }
     }
 
-    LossAwareDetectorShot {
+    Ok(LossAwareDetectorShot {
         lost_measurements,
         detector_valid,
         checks,
-    }
+    })
 }
 
-fn symmetric_difference(left: &[usize], right: &[usize]) -> Vec<usize> {
-    let mut result = Vec::with_capacity(left.len() + right.len());
+fn checked_symmetric_difference(
+    left: &[usize],
+    right: &[usize],
+    budget: &mut LossAwareWorkBudget,
+) -> Result<Vec<usize>, String> {
+    let capacity = left
+        .len()
+        .checked_add(right.len())
+        .ok_or_else(|| "loss-aware elimination exceeded max_materialized_terms".to_string())?;
+    budget.charge_terms(capacity)?;
+    let mut result = Vec::new();
+    result
+        .try_reserve(capacity)
+        .map_err(|_| "loss-aware elimination allocation failed".to_string())?;
     let (mut a, mut b) = (0, 0);
     while a < left.len() || b < right.len() {
         match (left.get(a), right.get(b)) {
@@ -349,7 +504,7 @@ fn symmetric_difference(left: &[usize], right: &[usize]) -> Vec<usize> {
             (None, None) => break,
         }
     }
-    result
+    Ok(result)
 }
 
 pub(crate) fn measurements_to_detections_with_reference(
@@ -460,6 +615,23 @@ fn reference_measurement_count_mismatch(reference_len: usize, n_meas: usize) -> 
 mod tests {
     use super::*;
 
+    fn bit_rank(mut rows: Vec<usize>, columns: usize) -> usize {
+        let mut rank = 0;
+        for column in 0..columns {
+            let Some(pivot) = (rank..rows.len()).find(|&row| (rows[row] >> column) & 1 == 1) else {
+                continue;
+            };
+            rows.swap(rank, pivot);
+            for row in 0..rows.len() {
+                if row != rank && (rows[row] >> column) & 1 == 1 {
+                    rows[row] ^= rows[rank];
+                }
+            }
+            rank += 1;
+        }
+        rank
+    }
+
     #[test]
     fn precomputed_reference_is_used_instead_of_rebuilding_from_the_circuit() {
         let instrs = crate::parser::parse_lines("X 0\nM 0\nDETECTOR rec[-1]\n").unwrap();
@@ -478,5 +650,67 @@ mod tests {
             reference_measurement_count_mismatch(2, 3),
             "reference has 2 bits but circuit has 3 measurements"
         );
+    }
+
+    #[test]
+    fn exhaustive_small_matrices_return_a_complete_independent_left_kernel() {
+        const DETECTORS: usize = 3;
+        const MEASUREMENTS: usize = 3;
+        let raw = BitTable::new(DETECTORS, 1);
+
+        for matrix_bits in 0usize..(1 << (DETECTORS * MEASUREMENTS)) {
+            let detector_rows: Vec<Vec<usize>> = (0..DETECTORS)
+                .map(|detector| {
+                    (0..MEASUREMENTS)
+                        .filter(|&measurement| {
+                            let bit = detector * MEASUREMENTS + measurement;
+                            (matrix_bits >> bit) & 1 == 1
+                        })
+                        .collect()
+                })
+                .collect();
+            for lost_bits in 0usize..(1 << MEASUREMENTS) {
+                let mut loss_mask = BitTable::new(MEASUREMENTS, 1);
+                for measurement in 0..MEASUREMENTS {
+                    loss_mask.set(measurement, 0, (lost_bits >> measurement) & 1 == 1);
+                }
+                let restricted_rows: Vec<usize> = detector_rows
+                    .iter()
+                    .map(|row| {
+                        row.iter().fold(0, |bits, &measurement| {
+                            if (lost_bits >> measurement) & 1 == 1 {
+                                bits | (1 << measurement)
+                            } else {
+                                bits
+                            }
+                        })
+                    })
+                    .collect();
+                let expected_dimension =
+                    DETECTORS - bit_rank(restricted_rows.clone(), MEASUREMENTS);
+                let mut budget = LossAwareWorkBudget::new(LossAwareM2dLimits::default());
+                let output =
+                    build_loss_aware_shot(&detector_rows, &raw, &loss_mask, 0, &mut budget)
+                        .unwrap();
+
+                assert_eq!(output.checks.len(), expected_dimension);
+                let source_rows: Vec<usize> = output
+                    .checks
+                    .iter()
+                    .map(|check| {
+                        let combined_restricted = check
+                            .source_detectors
+                            .iter()
+                            .fold(0, |bits, &detector| bits ^ restricted_rows[detector]);
+                        assert_eq!(combined_restricted, 0);
+                        check
+                            .source_detectors
+                            .iter()
+                            .fold(0, |bits, &detector| bits | (1 << detector))
+                    })
+                    .collect();
+                assert_eq!(bit_rank(source_rows, DETECTORS), expected_dimension);
+            }
+        }
     }
 }
