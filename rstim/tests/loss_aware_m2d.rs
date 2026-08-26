@@ -207,6 +207,27 @@ fn rejects_loss_flag_terms_and_malformed_explicit_masks() {
     .unwrap_err();
     assert!(error.contains("measurement_loss_mask has 1 bits"));
 
+    let wrong_measurement_width = BitTable::new(1, 1);
+    let error =
+        measurements_to_loss_aware_detections(&valid, &wrong_measurement_width).unwrap_err();
+    assert!(error.contains("meas_table has 1 bits but circuit has 2 measurements"));
+
+    let error = measurements_to_loss_aware_detections_with_loss_mask(
+        &valid,
+        &wrong_measurement_width,
+        &BitTable::new(2, 1),
+    )
+    .unwrap_err();
+    assert!(error.contains("meas_table has 1 bits but circuit has 2 measurements"));
+
+    let error = measurements_to_loss_aware_detections_with_loss_mask(
+        &valid,
+        &single_shot(&[false, false]),
+        &BitTable::new(2, 2),
+    )
+    .unwrap_err();
+    assert!(error.contains("measurement_loss_mask has 2 shots but meas_table has 1 shots"));
+
     let observable_references_flag = parse_lines("ML 0\nOBSERVABLE_INCLUDE(0) rec[-2]\n").unwrap();
     let error = measurements_to_loss_aware_detections(
         &observable_references_flag,
