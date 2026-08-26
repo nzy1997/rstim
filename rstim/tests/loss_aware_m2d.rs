@@ -267,4 +267,30 @@ fn configurable_work_limits_fail_before_unbounded_elimination() {
     )
     .unwrap_err();
     assert!(error.contains("max_detectors_per_shot"));
+
+    let empty_circuit = parse_lines("").unwrap();
+    let zero_width_many_shots = BitTable::new(0, 2);
+    let error = measurements_to_loss_aware_detections_with_loss_mask_and_limits(
+        &empty_circuit,
+        &zero_width_many_shots,
+        &zero_width_many_shots,
+        LossAwareM2dLimits {
+            max_shots_per_batch: 1,
+            ..LossAwareM2dLimits::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.contains("max_shots_per_batch"));
+
+    let error = measurements_to_loss_aware_detections_with_loss_mask_and_limits(
+        &circuit,
+        &single_shot(&[false, false, false]),
+        &loss_mask(3, &[]),
+        LossAwareM2dLimits {
+            max_batch_table_bits: 2,
+            ..LossAwareM2dLimits::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.contains("measurement table exceeded max_batch_table_bits"));
 }

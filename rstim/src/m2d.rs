@@ -47,6 +47,8 @@ pub struct LossAwareM2dOutput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LossAwareM2dLimits {
     pub max_detectors_per_shot: usize,
+    pub max_shots_per_batch: usize,
+    pub max_batch_table_bits: u64,
     pub max_pivots_per_shot: usize,
     pub max_elimination_steps: u64,
     pub max_materialized_terms: u64,
@@ -56,6 +58,8 @@ impl Default for LossAwareM2dLimits {
     fn default() -> Self {
         Self {
             max_detectors_per_shot: 10_000_000,
+            max_shots_per_batch: 1_000_000,
+            max_batch_table_bits: 1_000_000_000,
             max_pivots_per_shot: 1_000_000,
             max_elimination_steps: 100_000_000,
             max_materialized_terms: 100_000_000,
@@ -143,6 +147,7 @@ pub fn measurements_to_loss_aware_detections(
     )
     .map_err(|err| err.to_string())?;
     validate_loss_flag_references(&layout)?;
+    preflight_loss_aware_tables(&layout, meas_table, LossAwareM2dLimits::default())?;
     let loss_mask = loss_mask_from_loss_visible_measurements(&layout, meas_table)?;
     measurements_to_loss_aware_detections_with_layout(
         instrs,
@@ -201,6 +206,7 @@ fn measurements_to_loss_aware_detections_with_layout(
     limits: LossAwareM2dLimits,
 ) -> Result<LossAwareM2dOutput, String> {
     validate_loss_mask_shape(meas_table, measurement_loss_mask, layout.num_measurements())?;
+    preflight_loss_aware_tables(layout, meas_table, limits)?;
     let merged_loss_mask = merge_embedded_loss_flags(layout, meas_table, measurement_loss_mask)?;
 
     let raw = measurements_to_detections(instrs, meas_table)?;
@@ -219,6 +225,40 @@ fn measurements_to_loss_aware_detections_with_layout(
         )?);
     }
     Ok(LossAwareM2dOutput { shots })
+}
+
+fn preflight_loss_aware_tables(
+    layout: &CheckedMeasurementLayout,
+    meas_table: &BitTable,
+    limits: LossAwareM2dLimits,
+) -> Result<(), String> {
+    let shots = meas_table.num_minor();
+    if shots > limits.max_shots_per_batch {
+        return Err("loss-aware input exceeded max_shots_per_batch".to_string());
+    }
+    if layout.num_detectors() > limits.max_detectors_per_shot {
+        return Err("loss-aware output exceeded max_detectors_per_shot".to_string());
+    }
+    for (name, width) in [
+        ("measurement", layout.num_measurements()),
+        ("detector", layout.num_detectors()),
+        ("observable", layout.num_observables()),
+    ] {
+        let bits = u64::try_from(width)
+            .ok()
+            .and_then(|width| {
+                u64::try_from(shots)
+                    .ok()
+                    .and_then(|shots| width.checked_mul(shots))
+            })
+            .ok_or_else(|| format!("loss-aware {name} table exceeded max_batch_table_bits"))?;
+        if bits > limits.max_batch_table_bits {
+            return Err(format!(
+                "loss-aware {name} table exceeded max_batch_table_bits"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn merge_embedded_loss_flags(

@@ -111,12 +111,13 @@ Legacy `measurements_to_detections` and CLI `m2d` remain unchanged. Their
 binary output is suitable only when all referenced measurements are present,
 or as an explicitly named baseline that does not claim to be loss aware.
 
-`LossAwareM2dLimits` bounds detectors and pivots per shot, elimination steps,
-and cumulative sparse terms materialized across the batch. Bounds are checked
-before the corresponding large allocation. Exceeding one returns an
-actionable error. The convenience APIs use conservative defaults; callers
-processing untrusted or very large batches can call the explicit limits entry
-point.
+`LossAwareM2dLimits` bounds detectors and pivots per shot, shots per batch,
+each batch-shaped bit table, elimination steps, and cumulative sparse terms
+materialized across the batch. Table-shape bounds are preflighted before the
+merged loss mask and raw detector/observable tables are allocated. Exceeding a
+bound returns an actionable error. The convenience APIs use conservative
+defaults; callers processing untrusted or very large batches can call the
+explicit limits entry point.
 
 ## 4. Decoder and neural-network representations
 
