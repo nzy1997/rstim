@@ -255,4 +255,16 @@ fn configurable_work_limits_fail_before_unbounded_elimination() {
     )
     .unwrap_err();
     assert!(error.contains("max_materialized_terms"));
+
+    let error = measurements_to_loss_aware_detections_with_loss_mask_and_limits(
+        &circuit,
+        &single_shot(&[false, false, false]),
+        &loss_mask(3, &[]),
+        LossAwareM2dLimits {
+            max_detectors_per_shot: 1,
+            ..LossAwareM2dLimits::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.contains("max_detectors_per_shot"));
 }

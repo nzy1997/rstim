@@ -46,6 +46,7 @@ pub struct LossAwareM2dOutput {
 /// Resource limits for shot-conditioned loss elimination.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LossAwareM2dLimits {
+    pub max_detectors_per_shot: usize,
     pub max_pivots_per_shot: usize,
     pub max_elimination_steps: u64,
     pub max_materialized_terms: u64,
@@ -54,6 +55,7 @@ pub struct LossAwareM2dLimits {
 impl Default for LossAwareM2dLimits {
     fn default() -> Self {
         Self {
+            max_detectors_per_shot: 10_000_000,
             max_pivots_per_shot: 1_000_000,
             max_elimination_steps: 100_000_000,
             max_materialized_terms: 100_000_000,
@@ -376,9 +378,6 @@ fn build_loss_aware_shot(
     budget: &mut LossAwareWorkBudget,
 ) -> Result<LossAwareDetectorShot, String> {
     let mut lost_measurements = Vec::new();
-    lost_measurements
-        .try_reserve(loss_mask.num_major().min(1024))
-        .map_err(|_| "loss-aware lost-measurement allocation failed".to_string())?;
     for measurement in 0..loss_mask.num_major() {
         if loss_mask.get(measurement, shot) {
             budget.charge_terms(1)?;
@@ -388,24 +387,24 @@ fn build_loss_aware_shot(
             lost_measurements.push(measurement);
         }
     }
+    if detector_rows.len() > budget.limits.max_detectors_per_shot {
+        return Err("loss-aware output exceeded max_detectors_per_shot".to_string());
+    }
     let mut detector_valid = Vec::new();
     detector_valid
         .try_reserve_exact(detector_rows.len())
         .map_err(|_| "loss-aware detector-valid allocation failed".to_string())?;
     let mut pivots = HashMap::<usize, LossPivot>::new();
     let mut checks = Vec::new();
-    checks
-        .try_reserve(detector_rows.len().min(1024))
-        .map_err(|_| "loss-aware check allocation failed".to_string())?;
 
     for (detector, row) in detector_rows.iter().enumerate() {
         let mut measurement_terms = Vec::new();
-        measurement_terms
-            .try_reserve(row.len())
-            .map_err(|_| "loss-aware pivot allocation failed".to_string())?;
         for &measurement in row {
             if loss_mask.get(measurement, shot) {
                 budget.charge_terms(1)?;
+                measurement_terms
+                    .try_reserve(1)
+                    .map_err(|_| "loss-aware pivot allocation failed".to_string())?;
                 measurement_terms.push(measurement);
             }
         }
