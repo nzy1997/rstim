@@ -13,6 +13,8 @@ jobs:
     name: Probe built-in token ruleset visibility
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Read release-tag ruleset metadata
         env:
           GH_TOKEN: ${{ github.token }}
@@ -21,3 +23,13 @@ jobs:
         run: |
           gh api "repos/${REPOSITORY}/rulesets/${RULESET_ID}" \
             --jq '{id, enforcement, has_bypass: has("bypass_actors"), updated_at}'
+
+      - name: Run release gate through reviewed-snapshot path
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 tools/check_release_gate.py \
+            --repo "${REPOSITORY}" \
+            --tag v0.2.1 \
+            --dry-run
