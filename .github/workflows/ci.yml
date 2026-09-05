@@ -17,6 +17,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: DISPOSABLE required-check negative control
+        if: ${{ hashFiles('.github/DISPOSABLE_BRANCH_GATE_NEGATIVE_CONTROL.md') != '' }}
+        run: |
+          echo "::error::Intentional required-check failure for issue #686; do not merge PR #697"
+          exit 1
       - name: Install system deps
         run: |
           sudo find /etc/apt/sources.list.d -maxdepth 1 -type f \( -iname '*azure-cli*' -o -iname '*microsoft*' \) -delete
