@@ -1,0 +1,23 @@
+name: DISPOSABLE ruleset token visibility probe
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  probe:
+    name: Probe built-in token ruleset visibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read release-tag ruleset metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RULESET_ID: "22323622"
+        run: |
+          gh api "repos/${REPOSITORY}/rulesets/${RULESET_ID}" \
+            --jq '{id, enforcement, has_bypass: has("bypass_actors"), updated_at}'
